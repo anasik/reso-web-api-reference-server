@@ -1,6 +1,7 @@
 version: "3.8"
 services:
   builder:
+    platform: linux/amd64
     image: ubuntu:20.04
     build:
       context: .

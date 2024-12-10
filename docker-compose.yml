@@ -1,5 +1,6 @@
 services:
   odata-manager-app:
+    platform: linux/amd64
     restart: on-failure
     build: ./
     ports:
@@ -13,19 +14,20 @@ services:
       - SQL_DB_DRIVER
       - CERT_REPORT_FILENAME
       - ENABLE_DEBUG=false # Ensure debugging is off for production
+      - MONGOSQL_TRANSLATE_PATH
     volumes:
       - ./build/libs:/usr/local/tomcat/webapps
     depends_on:
       - mongo
 
   mongo:
-    image: mongo
+    image: mongodb/mongodb-enterprise-server
     restart: always
     ports:
       - 27017:27017
     environment:
-      MONGO_INITDB_ROOT_USERNAME: root
-      MONGO_INITDB_ROOT_PASSWORD: root
+      MONGODB_INITDB_ROOT_USERNAME: root
+      MONGODB_INITDB_ROOT_PASSWORD: root
     volumes:
       - ./mongo-init-scripts:/docker-entrypoint-initdb.d
 
