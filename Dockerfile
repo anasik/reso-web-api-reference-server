@@ -9,7 +9,9 @@ EXPOSE 8000
 EXPOSE 8080
 
 # Set up JPDA_OPTS dynamically in CMD based on ENABLE_DEBUG
-CMD if [ "$ENABLE_DEBUG" = "true" ]; then \
+CMD export LD_LIBRARY_PATH=/usr/local/tomcat/native-jni-lib:$LD_LIBRARY_PATH && \
+    cp /usr/local/tomcat/webapps/libmongosqltranslate.so /usr/local/tomcat/native-jni-lib/ && \
+    if [ "$ENABLE_DEBUG" = "true" ]; then \
         export JPDA_OPTS="-agentlib:jdwp=transport=$JPDA_TRANSPORT,address=0.0.0.0:$JPDA_ADDRESS,server=y,suspend=y" && \
         echo "Debugging enabled with JPDA_OPTS: $JPDA_OPTS" && \
         catalina.sh jpda run; \

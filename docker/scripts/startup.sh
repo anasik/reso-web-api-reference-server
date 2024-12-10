@@ -29,6 +29,11 @@ if [ -z "${SQL_HOST}" ]; then
   # Fetch the RESO Data Dictionary
 fi
 
+if [ -e "libmongosqltranslate.so" ]; then
+  echo "libmongosqltranslate.so exists already. Skipping."
+else
+  wget https://raw.githubusercontent.com/mongodb/mongo-jdbc-driver/refs/heads/on-prem-eap/src/main/resources/x86_64/linux/libmongosqltranslate.so -O "libmongosqltranslate.so"
+fi
 
 # Run Maven to build the project
 #if mvn install; then
@@ -49,6 +54,14 @@ if ./gradlew war; then
       echo "Copied RESODataDictionary-1.7.metadata-report.json to build/libs/"
     else
       echo "JSON file not found: RESODataDictionary-1.7.metadata-report.json"
+      exit 1
+    fi
+
+    if [ -f "libmongosqltranslate.so" ]; then
+      cp libmongosqltranslate.so ./build/libs/
+      echo "Copied libmongosqltranslate.so to build/libs/"
+    else
+      echo "SO file not found: libmongosqltranslate.so"
       exit 1
     fi
 else
