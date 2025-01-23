@@ -33,12 +33,12 @@ if [ -z "${SQL_HOST}" ]; then
 
 
 
-#  if [ -e "RESODataDictionary-1.7.metadata-report.json" ]; then
-#      echo "RESODataDictionary-1.7.metadata-report.json exists already. Skipping."
-#  else
-#      wget https://resostuff.blob.core.windows.net/refserverfiles/RESODataDictionary-1.7.metadata-report.json -O "RESODataDictionary-1.7.metadata-report.json"
-#  fi
-  # Fetch the RESO Data Dictionary
+  if [ -e "RESODataDictionary-1.7.metadata-report.json" ]; then
+      echo "RESODataDictionary-1.7.metadata-report.json exists already. Skipping."
+  else
+      wget https://resostuff.blob.core.windows.net/refserverfiles/RESODataDictionary-1.7.metadata-report.json -O "RESODataDictionary-1.7.metadata-report.json"
+  fi
+#   Fetch the RESO Data Dictionary
 fi
 
 
@@ -55,14 +55,14 @@ if ./gradlew war; then
       exit 1
     fi
 
-    # Copy the JSON file (if it exists)
-#    if [ -f "RESODataDictionary-2.0.metadata-report.json" ]; then
-#      cp RESODataDictionary-2.0.metadata-report.json ./build/libs/
-#      echo "Copied RESODataDictionary-2.0.metadata-report.json to build/libs/"
-#    else
-#      echo "JSON file not found: RESODataDictionary-2.0.metadata-report.json"
-#      exit 1
-#    fi
+     Copy the JSON file (if it exists)
+    if [ -f "RESODataDictionary-1.7.metadata-report.json" ]; then
+      cp RESODataDictionary-2.0.metadata-report.json ./build/libs/
+      echo "Copied RESODataDictionary-1.7.metadata-report.json to build/libs/"
+    else
+      echo "JSON file not found: RESODataDictionary-1.7.metadata-report.json"
+      exit 1
+    fi
 else
   echo "Gradle build failed"
   exit 1
