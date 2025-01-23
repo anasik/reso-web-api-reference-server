@@ -16,20 +16,20 @@ if [ -z "${SQL_HOST}" ]; then
   fi
 
   # Generate the DDL
-  java -jar "${TEMP_DIR}/web-api-commander.jar" --generateReferenceDDL --useKeyNumeric >"${SQL_DIR}/reso-reference-ddl-dd-1.7.numeric-keys.sql"
-  sed -i '1,2d' "${SQL_DIR}/reso-reference-ddl-dd-1.7.numeric-keys.sql"
-  sed -i '1359s/(LookupKey, LookupName, LookupValue, StandardLookupValue, LegacyOdataValue)/(LookupKey, LookupName, LookupValue, LegacyOdataValue, StandardLookupValue)/' "${SQL_DIR}/reso-reference-ddl-dd-1.7.numeric-keys.sql"
-  echo "CREATE TABLE IF NOT EXISTS lookup_value (
-      LookupValueKey TEXT,
-      LookupValueKeyNumeric BIGINT NOT NULL AUTO_INCREMENT,
-      ResourceName TEXT,
-      ResourceRecordKey TEXT,
-      ResourceRecordKeyNumeric BIGINT,
-      LookupKey TEXT,
-      ModificationTimestamp TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-      FieldName TEXT NOT NULL,
-      PRIMARY KEY (LookupValueKeyNumeric)
-  ) ENGINE=MyISAM DEFAULT CHARSET=utf8;" >> "${SQL_DIR}/reso-reference-ddl-dd-1.7.numeric-keys.sql"
+#  java -jar "${TEMP_DIR}/web-api-commander.jar" --generateReferenceDDL --useKeyNumeric >"${SQL_DIR}/reso-reference-ddl-dd-1.7.numeric-keys.sql"
+#  sed -i '1,2d' "${SQL_DIR}/reso-reference-ddl-dd-1.7.numeric-keys.sql"
+#  sed -i '1359s/(LookupKey, LookupName, LookupValue, StandardLookupValue, LegacyOdataValue)/(LookupKey, LookupName, LookupValue, LegacyOdataValue, StandardLookupValue)/' "${SQL_DIR}/reso-reference-ddl-dd-1.7.numeric-keys.sql"
+#  echo "CREATE TABLE IF NOT EXISTS lookup_value (
+#      LookupValueKey TEXT,
+#      LookupValueKeyNumeric BIGINT NOT NULL AUTO_INCREMENT,
+#      ResourceName TEXT,
+#      ResourceRecordKey TEXT,
+#      ResourceRecordKeyNumeric BIGINT,
+#      LookupKey TEXT,
+#      ModificationTimestamp TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+#      FieldName TEXT NOT NULL,
+#      PRIMARY KEY (LookupValueKeyNumeric)
+#  ) ENGINE=MyISAM DEFAULT CHARSET=utf8;" >> "${SQL_DIR}/reso-reference-ddl-dd-1.7.numeric-keys.sql"
 
 
 
@@ -38,7 +38,7 @@ if [ -z "${SQL_HOST}" ]; then
   else
       wget https://resostuff.blob.core.windows.net/refserverfiles/RESODataDictionary-1.7.metadata-report.json -O "RESODataDictionary-1.7.metadata-report.json"
   fi
-  # Fetch the RESO Data Dictionary
+#   Fetch the RESO Data Dictionary
 fi
 
 
@@ -55,7 +55,7 @@ if ./gradlew war; then
       exit 1
     fi
 
-    # Copy the JSON file (if it exists)
+#     Copy the JSON file (if it exists)
     if [ -f "RESODataDictionary-1.7.metadata-report.json" ]; then
       cp RESODataDictionary-1.7.metadata-report.json ./build/libs/
       echo "Copied RESODataDictionary-1.7.metadata-report.json to build/libs/"
