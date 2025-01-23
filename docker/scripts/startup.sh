@@ -56,13 +56,13 @@ if ./gradlew war; then
     fi
 
     # Copy the JSON file (if it exists)
-    if [ -f "RESODataDictionary-2.0.metadata-report.json" ]; then
-      cp RESODataDictionary-2.0.metadata-report.json ./build/libs/
-      echo "Copied RESODataDictionary-2.0.metadata-report.json to build/libs/"
-    else
-      echo "JSON file not found: RESODataDictionary-2.0.metadata-report.json"
-      exit 1
-    fi
+#    if [ -f "RESODataDictionary-2.0.metadata-report.json" ]; then
+#      cp RESODataDictionary-2.0.metadata-report.json ./build/libs/
+#      echo "Copied RESODataDictionary-2.0.metadata-report.json to build/libs/"
+#    else
+#      echo "JSON file not found: RESODataDictionary-2.0.metadata-report.json"
+#      exit 1
+#    fi
 else
   echo "Gradle build failed"
   exit 1
