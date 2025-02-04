@@ -38,7 +38,7 @@ dependencies {
     // Test dependencies
     testImplementation libs.org.junit.jupiter.junit.jupiter.api
     testImplementation libs.org.junit.jupiter.junit.jupiter.engine
-
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.8.1'
     // Compile-only dependencies
     compileOnly libs.javax.servlet.javax.servlet.api
 }
@@ -46,6 +46,10 @@ dependencies {
 group = 'org.reso'
 version = '1.0'
 description = 'RESOservice'
+
+test {
+    useJUnitPlatform()
+}
 
 // Ensure compatibility with Java 8
 java {

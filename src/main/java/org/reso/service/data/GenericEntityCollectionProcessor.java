@@ -1,6 +1,5 @@
 package org.reso.service.data;
 
-
 import org.apache.olingo.commons.api.data.*;
 import org.apache.olingo.commons.api.edm.EdmEntitySet;
 import org.apache.olingo.commons.api.edm.EdmEntityType;
@@ -35,22 +34,21 @@ import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-public class GenericEntityCollectionProcessor implements EntityCollectionProcessor
-{
-   private              OData                odata;
-   private              ServiceMetadata      serviceMetadata;
-   private       Connection connect           = null;
-   private final String     dbType;
+public class GenericEntityCollectionProcessor implements EntityCollectionProcessor {
+   private OData odata;
+   private ServiceMetadata serviceMetadata;
+   private Connection connect = null;
+   private final String dbType;
    HashMap<String, ResourceInfo> resourceList = null;
-   private static final Logger               LOG               = LoggerFactory.getLogger(GenericEntityCollectionProcessor.class);
-   private static final int PAGE_SIZE           = 100;
+   private static final Logger LOG = LoggerFactory.getLogger(GenericEntityCollectionProcessor.class);
+   private static final int PAGE_SIZE = 100;
 
    /**
     * If you use this constructor, make sure to set your resourceInfo
+    * 
     * @param connection
     */
-   public GenericEntityCollectionProcessor(Connection connection, String dbType)
-   {
+   public GenericEntityCollectionProcessor(Connection connection, String dbType) {
       this.resourceList = new HashMap<>();
       this.connect = connection;
       this.dbType = dbType;
@@ -61,20 +59,21 @@ public class GenericEntityCollectionProcessor implements EntityCollectionProcess
       this.serviceMetadata = serviceMetadata;
    }
 
-   public void addResource(ResourceInfo resource, String name)
-   {
-      resourceList.put(name,resource);
+   public void addResource(ResourceInfo resource, String name) {
+      resourceList.put(name, resource);
    }
 
-   public void readEntityCollection(ODataRequest request, ODataResponse response, UriInfo uriInfo, ContentType responseFormat)
-            throws ODataApplicationException, SerializerException
-   {
+   public void readEntityCollection(ODataRequest request, ODataResponse response, UriInfo uriInfo,
+         ContentType responseFormat)
+         throws ODataApplicationException, SerializerException {
 
-      // 1st we have retrieve the requested EntitySet from the uriInfo object (representation of the parsed service URI)
+      // 1st we have retrieve the requested EntitySet from the uriInfo object
+      // (representation of the parsed service URI)
       List<UriResource> resourcePaths = uriInfo.getUriResourceParts();
-      UriResourceEntitySet uriResourceEntitySet = (UriResourceEntitySet) resourcePaths.get(0); // in our example, the first segment is the EntitySet
+      UriResourceEntitySet uriResourceEntitySet = (UriResourceEntitySet) resourcePaths.get(0); // in our example, the
+                                                                                               // first segment is the
+                                                                                               // EntitySet
       EdmEntitySet edmEntitySet = uriResourceEntitySet.getEntitySet();
-
 
       String resourceName = uriResourceEntitySet.toString();
 
@@ -84,8 +83,8 @@ public class GenericEntityCollectionProcessor implements EntityCollectionProcess
       CountOption countOption = uriInfo.getCountOption();
       if (countOption != null) {
          isCount = countOption.getValue();
-         if (isCount){
-            LOG.debug("Count str:"+countOption.getText() );
+         if (isCount) {
+            LOG.debug("Count str:" + countOption.getText());
          }
       }
 
@@ -93,12 +92,9 @@ public class GenericEntityCollectionProcessor implements EntityCollectionProcess
       // it has to be delivered as EntitySet object
       EntityCollection entitySet;
 
-      if (resource.useCustomDatasource() )
-      {
+      if (resource.useCustomDatasource()) {
          entitySet = resource.getData(edmEntitySet, uriInfo, isCount);
-      }
-      else
-      {
+      } else {
          entitySet = getData(edmEntitySet, uriInfo, isCount, resource);
       }
 
@@ -108,50 +104,45 @@ public class GenericEntityCollectionProcessor implements EntityCollectionProcess
       int skipNumber = skipOption == null ? 0 : skipOption.getValue();
 
       // 3rd: create a serializer based on the requested format (json)
-      try
-      {
-         entitySet.setNext(new URI(modifyUrl(request.getRawRequestUri(), topNumber, skipNumber+topNumber)));
-         uriInfo.asUriInfoAll().getFormatOption().getFormat();  // If Format is given, then we will use what it has.
-      }
-      catch (Exception e)
-      {
-         responseFormat = ContentType.JSON;  // If format is not set in the $format, then use JSON.
-         // There is some magic that will select XML if you're viewing from a browser or something which I'm bypassing here.
+      try {
+         entitySet.setNext(new URI(modifyUrl(request.getRawRequestUri(), topNumber, skipNumber + topNumber)));
+         uriInfo.asUriInfoAll().getFormatOption().getFormat(); // If Format is given, then we will use what it has.
+      } catch (Exception e) {
+         responseFormat = ContentType.JSON; // If format is not set in the $format, then use JSON.
+         // There is some magic that will select XML if you're viewing from a browser or
+         // something which I'm bypassing here.
          // If you want a different $format, explicitly state it.
       }
 
       ODataSerializer serializer = odata.createSerializer(responseFormat);
 
-      // 4th: Now serialize the content: transform from the EntitySet object to InputStream
+      // 4th: Now serialize the content: transform from the EntitySet object to
+      // InputStream
       EdmEntityType edmEntityType = edmEntitySet.getEntityType();
       SelectOption selectOption = uriInfo.getSelectOption();
       ExpandOption expandOption = uriInfo.getExpandOption();
       String selectList = odata.createUriHelper().buildContextURLSelectList(edmEntityType,
-              expandOption, selectOption);
+            expandOption, selectOption);
       ContextURL contextUrl = ContextURL.with().entitySet(edmEntitySet).selectList(selectList).build();
 
       final String id = request.getRawBaseUri() + "/" + edmEntitySet.getName();
       EntityCollectionSerializerOptions opts = null;
-      if (isCount)  // If there's a $count=true in the query string, we need to have a different formatting options.
+      if (isCount) // If there's a $count=true in the query string, we need to have a different
+                   // formatting options.
       {
          opts = EntityCollectionSerializerOptions.with()
-                  .contextURL(contextUrl)
-                  .id(id)
-                  .count(countOption)
-                  .build();
-      }
-      else
-      {
-         if (selectOption!=null)
-         {
+               .contextURL(contextUrl)
+               .id(id)
+               .count(countOption)
+               .build();
+      } else {
+         if (selectOption != null) {
             opts = EntityCollectionSerializerOptions.with()
-                     .contextURL(contextUrl)
-                     .select(selectOption).expand(expandOption)
-                     .id(id)
-                     .build();
-         }
-         else
-         {
+                  .contextURL(contextUrl)
+                  .select(selectOption).expand(expandOption)
+                  .id(id)
+                  .build();
+         } else {
             opts = EntityCollectionSerializerOptions.with().id(id).contextURL(contextUrl).expand(expandOption).build();
          }
       }
@@ -164,201 +155,130 @@ public class GenericEntityCollectionProcessor implements EntityCollectionProcess
       response.setHeader(HttpHeader.CONTENT_TYPE, responseFormat.toContentTypeString());
    }
 
-   protected EntityCollection getData(EdmEntitySet edmEntitySet, UriInfo uriInfo, boolean isCount, ResourceInfo resource) throws ODataApplicationException {
+   protected EntityCollection getData(EdmEntitySet edmEntitySet, UriInfo uriInfo, boolean isCount,
+         ResourceInfo resource) throws ODataApplicationException {
       ArrayList<FieldInfo> fields = resource.getFieldList();
-
       EntityCollection entCollection = new EntityCollection();
-
       List<Entity> productList = entCollection.getEntities();
-
       Map<String, String> properties = System.getenv();
 
       try {
          String primaryFieldName = resource.getPrimaryKeyName();
-
          FilterOption filter = uriInfo.getFilterOption();
          String sqlCriteria = null;
-         if (filter!=null)
-         {
-            if (true)
-            {
+
+         if (filter != null) {
+            if (this.dbType.equals("mysql")) {
                sqlCriteria = filter.getExpression().accept(new MySQLFilterExpressionVisitor(resource));
-            }
-            else if (this.dbType.equals("postgres"))
-            {
+            } else if (this.dbType.equals("postgres")) {
+               sqlCriteria = filter.getExpression().accept(new PostgreSQLFilterExpressionVisitor(resource));
+            } else if (this.dbType.equals("mongodb")) {
                sqlCriteria = filter.getExpression().accept(new PostgreSQLFilterExpressionVisitor(resource));
             }
          }
-         HashMap<String,Boolean> selectLookup = null;
 
-         // Statements allow to issue SQL queries to the database
+         HashMap<String, Boolean> selectLookup = null;
          Statement statement = connect.createStatement();
-         // Result set get the result of the SQL query
          String queryString = null;
+         String dbType = getDatabaseType(); // get from db
+         LOG.info("Detected Database Type: " + getDatabaseType());
 
-         // Logic for $count
-         if (isCount)
-         {
-            queryString = "select count(*) AS rowcount from " + resource.getTableName();
-         }
-         else
-         {
+         if (isCount) {
+            queryString = "SELECT count(*) AS rowcount FROM " + resource.getTableName();
+         } else {
             SelectOption selectOption = uriInfo.getSelectOption();
-            if (false)
-            {
+            if (false) {
                selectLookup = new HashMap<>();
-               selectLookup.put(primaryFieldName,true);
-
-               for (SelectItem sel:selectOption.getSelectItems())
-               {
+               selectLookup.put(primaryFieldName, true);
+               for (SelectItem sel : selectOption.getSelectItems()) {
                   String val = sel.getResourcePath().getUriResourceParts().get(0).toString();
-                  selectLookup.put(val,true);
+                  selectLookup.put(val, true);
                }
                EdmEntityType edmEntityType = edmEntitySet.getEntityType();
-               String selectList = odata.createUriHelper().buildContextURLSelectList(edmEntityType,
-                                                                                     null, selectOption);
-
-               LOG.debug("Select list:"+selectList);
-               queryString = "select "+selectList+" from " + resource.getTableName();
-            }
-            else
-            {
-               queryString = "select * from " + resource.getTableName();
+               String selectList = odata.createUriHelper().buildContextURLSelectList(edmEntityType, null, selectOption);
+               LOG.debug("Select list:" + selectList);
+               queryString = "SELECT " + selectList + " FROM " + resource.getTableName();
+            } else {
+               queryString = "SELECT * FROM " + resource.getTableName();
             }
          }
-         if (null!=sqlCriteria && sqlCriteria.length()>0)
-         {
-            queryString = queryString + " WHERE " + sqlCriteria;
+
+         if (sqlCriteria != null && !sqlCriteria.isEmpty()) {
+            queryString += " WHERE " + sqlCriteria;
          }
 
          OrderByOption orderByOption = uriInfo.getOrderByOption();
-         if (orderByOption != null)
-         {
+         if (orderByOption != null) {
             List<OrderByItem> orderItemList = orderByOption.getOrders();
-            final OrderByItem orderByItem = orderItemList.get(0); // we support only one
+            final OrderByItem orderByItem = orderItemList.get(0);
             Expression expression = orderByItem.getExpression();
-            if (expression instanceof Member)
-            {
-               UriInfoResource resourcePath = ((Member)expression).getResourcePath();
+            if (expression instanceof Member) {
+               UriInfoResource resourcePath = ((Member) expression).getResourcePath();
                UriResource uriResource = resourcePath.getUriResourceParts().get(0);
-               if (uriResource instanceof UriResourcePrimitiveProperty)
-               {
+               if (uriResource instanceof UriResourcePrimitiveProperty) {
                   EdmProperty edmProperty = ((UriResourcePrimitiveProperty) uriResource).getProperty();
-                  final String sortPropertyName = edmProperty.getName(); // .toLowerCase();
-                  queryString = queryString + " ORDER BY "+sortPropertyName;
-                  if(orderByItem.isDescending())
-                  {
-                     queryString = queryString + " DESC";
+                  final String sortPropertyName = edmProperty.getName();
+                  queryString += " ORDER BY " + sortPropertyName;
+                  if (orderByItem.isDescending()) {
+                     queryString += " DESC";
                   }
                }
             }
          }
 
-         // Logic for $top
+         // Pagination logic: Ensure LIMIT is only added when it's > 0
          TopOption topOption = uriInfo.getTopOption();
-         int topNumber = topOption == null ? PAGE_SIZE : topOption.getValue();
-         if (topNumber != 0) {
-            if (topNumber > 0)
-            {
-               // Logic for $skip
-               SkipOption skipOption = uriInfo.getSkipOption();
-               if (skipOption != null)
-               {
-                  int skipNumber = skipOption.getValue();
-                  if (skipNumber >= 0)
-                  {
-//                     TODO: the order for skip number and top number may be flipped with atlas SQL
-                     queryString = queryString + " LIMIT "+skipNumber+", "+topNumber;
-                  }
-                  else
-                  {
-                     throw new ODataApplicationException("Invalid value for $skip", HttpStatusCode.BAD_REQUEST.getStatusCode(), Locale.ROOT);
-                  }
+         int topNumber = (topOption == null) ? PAGE_SIZE : topOption.getValue();
+         SkipOption skipOption = uriInfo.getSkipOption();
+         int skipNumber = (skipOption != null) ? skipOption.getValue() : 0;
+
+         LOG.debug("dbType: " + this.dbType);
+         LOG.debug("Top: " + topNumber + ", Skip: " + skipNumber);
+
+         if (topNumber > 0) {
+            if (this.dbType.equals("mysql")) {
+               queryString += " LIMIT " + topNumber + ", " + skipNumber;
+            } else if (this.dbType.equals("postgres")) {
+               queryString += " LIMIT " + topNumber + " OFFSET " + skipNumber;
+            } else if (this.dbType.equals("mongodb")) {
+               if (topNumber > 0) {
+                  queryString += " LIMIT " + topNumber + " OFFSET " + skipNumber;
+               } else {
+                  LOG.warn("Skipping LIMIT for MongoDB since topNumber is 0");
                }
-               else
-               {
-                  queryString = queryString + " LIMIT " + topNumber;
+            } else {
+               // Default case
+               if (topNumber > 0) {
+                  queryString += " LIMIT " + topNumber + " OFFSET " + skipNumber;
                }
             }
-            else
-            {
-               throw new ODataApplicationException("Invalid value for $top", HttpStatusCode.BAD_REQUEST.getStatusCode(), Locale.ROOT);
-            }
+         } else {
+            LOG.warn("Skipping LIMIT because topNumber is 0");
          }
 
-         LOG.info("SQL Query: "+queryString);
+         LOG.info("Final SQL Query: " + queryString);
+
+         LOG.info("SQL Query: " + queryString);
          ResultSet resultSet = statement.executeQuery(queryString);
 
-         // special return logic for $count
-         if (isCount && resultSet.next())
-         {
+         // Retorno especial para $count
+         if (isCount && resultSet.next()) {
             int size = resultSet.getInt("rowcount");
-            LOG.debug("Size = "+size);
+            LOG.debug("Size = " + size);
             entCollection.setCount(size);
             return entCollection;
          }
-         ArrayList<String> resourceRecordKeys = new ArrayList<>();
 
-         // add the lookups from the database.
-         while (resultSet.next())
-         {
-            Entity ent = CommonDataProcessing.getEntityFromRow(resultSet,resource,selectLookup);
-            resourceRecordKeys.add( ent.getProperty(primaryFieldName).getValue().toString() );
+         ArrayList<String> resourceRecordKeys = new ArrayList<>();
+         while (resultSet.next()) {
+            Entity ent = CommonDataProcessing.getEntityFromRow(resultSet, resource, selectLookup);
+            resourceRecordKeys.add(ent.getProperty(primaryFieldName).getValue().toString());
             productList.add(ent);
          }
-         List<FieldInfo> enumFields = CommonDataProcessing.gatherEnumFields(resource);
 
-         if (productList.size()>0 && resourceRecordKeys.size()>0 && enumFields.size()>0)
-         {
-            queryString = "SELECT * FROM lookup_value";
-            queryString += " WHERE ResourceRecordKey IN ('" + String.join("', '", resourceRecordKeys) + "')";
-
-            LOG.info("SQL Query: "+queryString);
-            resultSet = statement.executeQuery(queryString);
-
-            // add the lookups from the database.
-            HashMap<String, HashMap<String, Object>> entities = new HashMap<>();
-            while (resultSet.next())
-            {
-               CommonDataProcessing.getEntityValues(resultSet, entities, enumFields);
-            }
-            for (Entity product :productList)
-            {
-               // The getValue should already be a String, so the toString should just pass it through, while making the following assignment simple.
-               String key = product.getProperty(primaryFieldName).getValue().toString();
-               HashMap<String, Object> enumValues = entities.get(key);
-               if(enumValues != null)
-                  CommonDataProcessing.setEntityEnums(enumValues,product,enumFields);
-
-
-            }
-         }
          statement.close();
-
-         int index = 0;
-         for (Entity product : productList) {
-            for (ExpandItem expandItem : uriInfo.getExpandOption().getExpandItems()) {
-               UriResource uriResource = expandItem.getResourcePath().getUriResourceParts().get(0);
-               if (uriResource instanceof UriResourceNavigation) {
-                  EdmNavigationProperty edmNavigationProperty = ((UriResourceNavigation) uriResource).getProperty();
-                  String navPropName = edmNavigationProperty.getName();
-
-                  EntityCollection expandEntityCollection = CommonDataProcessing.getExpandEntityCollection(connect, edmNavigationProperty, product, resource, resourceRecordKeys.get(index++));
-
-                  Link link = new Link();
-                  link.setTitle(navPropName);
-                  if (edmNavigationProperty.isCollection())
-                     link.setInlineEntitySet(expandEntityCollection);
-                  else
-                     link.setInlineEntity(expandEntityCollection.getEntities().get(0));
-
-                  product.getNavigationLinks().add(link);
-               }
-            }
-         }
-
       } catch (Exception e) {
-            LOG.error("Server Error occurred in reading "+resource.getResourceName(), e);
+         LOG.error("Server Error occurred in reading " + resource.getResourceName(), e);
          return entCollection;
       }
 
@@ -382,13 +302,35 @@ public class GenericEntityCollectionProcessor implements EntityCollectionProcess
          if (m.find()) {
             // Replace existing parameter
             url = m.replaceFirst(replacement);
+            LOG.info("1: Url Replacement: " + url);
          } else {
             // Append parameter, handling both cases: with and without existing query
-            url += (url.contains("?") ? "&" : "?") + replacement.replace("\\","");
+            url += (url.contains("?") ? "&" : "?") + replacement.replace("\\", "");
+            LOG.info("2: Url Replacement: " + url);
          }
       }
 
       return url;
+   }
+
+   private String getDatabaseType() {
+      try {
+         String dbProductName = connect.getMetaData().getDatabaseProductName().toLowerCase();
+
+         if (dbProductName.contains("mysql")) {
+            LOG.info("mysql");
+            return "mysql";
+         } else if (dbProductName.contains("postgres")) {
+            LOG.info("postgres");
+            return "postgres";
+         } else if (dbProductName.contains("mongodb")) {
+            LOG.info("mongodb");
+            return "mongodb";
+         }
+      } catch (SQLException e) {
+         LOG.error("Erro ao detectar o banco de dados", e);
+      }
+      return "unknown";
    }
 
 }
