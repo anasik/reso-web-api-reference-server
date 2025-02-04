@@ -6,8 +6,10 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.lang.reflect.Field;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.util.Map;
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
@@ -22,9 +24,18 @@ public class LookupEnumFlagsTest {
         process.waitFor();
     }
 
+    private static void setEnv(String key, String value) throws Exception {
+        Map<String, String> env = System.getenv();
+        Field field = env.getClass().getDeclaredField("m");
+        field.setAccessible(true);
+        Map<String, String> writableEnv = (Map<String, String>) field.get(env);
+        writableEnv.put(key, value);
+    }
+
     @Test
     @Order(1)
-    void testLookupEnumFlagsDD17() throws IOException, InterruptedException {
+    void testLookupStringDD17() throws Exception {
+        setEnv("LOOKUP_TYPE", "ENUM_FLAGS");
         runDDTest("1.7");
     }
 
@@ -45,9 +56,13 @@ public class LookupEnumFlagsTest {
                 "-l", "10"
         // ,"-a"
         );
+        Map<String, String> env = builder.environment();
 
+        String lookupType = "ENUM_FLAGS";
+        env.put("LOOKUP_TYPE", lookupType);
         builder.directory(new File(System.getProperty("user.dir")));
 
+        System.out.println("Running test with LOOKUP_TYPE = " + System.getenv().get("LOOKUP_TYPE"));
         System.out.println("Executing command: " + String.join(" ", builder.command()));
 
         Process process = builder.start();

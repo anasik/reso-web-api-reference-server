@@ -63,7 +63,6 @@ public class LookupStringTest {
         builder.directory(new File(System.getProperty("user.dir")));
 
         System.out.println("Running test with LOOKUP_TYPE = " + System.getenv().get("LOOKUP_TYPE"));
-        System.out.println("Running test with LOOKUP_TYPE = " + System.getenv("LOOKUP_TYPE"));
         System.out.println("Executing command: " + String.join(" ", builder.command()));
 
         Process process = builder.start();
