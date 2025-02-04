@@ -49,6 +49,7 @@ description = 'RESOservice'
 
 test {
     useJUnitPlatform()
+    environment "LOOKUP_TYPE", "STRING"
 }
 
 // Ensure compatibility with Java 8

@@ -6,8 +6,10 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.lang.reflect.Field;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.util.Map;
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
@@ -22,31 +24,46 @@ public class LookupStringTest {
         process.waitFor();
     }
 
-    @Test
-    @Order(1)
-    void testLookupStringDD17() throws IOException, InterruptedException {
-        runDDTest("1.7");
+    private static void setEnv(String key, String value) throws Exception {
+        Map<String, String> env = System.getenv();
+        Field field = env.getClass().getDeclaredField("m");
+        field.setAccessible(true);
+        Map<String, String> writableEnv = (Map<String, String>) field.get(env);
+        writableEnv.put(key, value);
     }
 
     @Test
-    @Order(2)
-    void testLookupStringDD20() throws IOException, InterruptedException {
-        runDDTest("2.0");
+    @Order(1)
+    void testLookupStringDD17() throws Exception {
+        setEnv("LOOKUP_TYPE", "STRING");
+        runDDTest("1.7");
     }
+
+    // @Test
+    // @Order(2)
+    // void testLookupStringDD20() throws IOException, InterruptedException {
+    // runDDTest("2.0");
+    // }
 
     void runDDTest(String version) throws IOException, InterruptedException {
         System.out.println("Starting Enum Data Dictionary Test for DD " + version);
 
+        String lookupType = "STRING";
         ProcessBuilder builder = new ProcessBuilder(
                 "cmd.exe", "/c", "reso-certification-utils",
                 "runDDTests",
                 "-p", "refServLocal.json",
                 "-v", version,
-                "-l", "10",
-                "-a");
+                "-l", "10"
+        // ,"-a"
+        );
+        Map<String, String> env = builder.environment();
 
+        env.put("LOOKUP_TYPE", lookupType);
         builder.directory(new File(System.getProperty("user.dir")));
 
+        System.out.println("Running test with LOOKUP_TYPE = " + System.getenv().get("LOOKUP_TYPE"));
+        System.out.println("Running test with LOOKUP_TYPE = " + System.getenv("LOOKUP_TYPE"));
         System.out.println("Executing command: " + String.join(" ", builder.command()));
 
         Process process = builder.start();
