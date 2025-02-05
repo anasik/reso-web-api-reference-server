@@ -328,7 +328,7 @@ public class GenericEntityCollectionProcessor implements EntityCollectionProcess
             return "mongodb";
          }
       } catch (SQLException e) {
-         LOG.error("Erro ao detectar o banco de dados", e);
+         LOG.error("Error connection to the database", e);
       }
       return "unknown";
    }
