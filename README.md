@@ -18,7 +18,7 @@ Run the `run.sh`
 
 ## Access the Server
 
-Assuming you're running the server locally, go to [do](http://localhost:8080/core/2.0.0/$metadata)\
+Assuming you're running the server locally, go to [http://localhost:8080/core/2.0.0/$metadata](http://localhost:8080/core/2.0.0/$metadata)\
 Otherwise, you will have to replace `localhost` with the IP of your Docker machine.
 
 ## Running with a different database
@@ -80,8 +80,6 @@ This will:
 - Start the RESO Reference Server (via Docker).
 - Run Data Dictionary compliance tests.
 - Validate different Lookup Types (STRING, ENUM_FLAGS, ENUM_COLLECTION).
-
-
 
 ### Testing Specific Lookup Types
 
