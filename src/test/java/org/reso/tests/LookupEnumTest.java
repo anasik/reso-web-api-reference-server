@@ -36,16 +36,17 @@ public class LookupEnumTest {
     @Order(1)
     void testLookupStringDD17() throws Exception {
         setEnv("LOOKUP_TYPE", "ENUM_COLLECTION");
-        runDDTest("1.7");
+        runDDTest("1.7", true);
     }
 
-    // @Test
-    // @Order(2)
-    // void testLookupEnumDD20() throws IOException, InterruptedException {
-    // runDDTest("2.0");
-    // }
+    @Test
+    @Order(2)
+    void testLookupEnumDD20() throws Exception {
+        setEnv("LOOKUP_TYPE", "ENUM_COLLECTION");
+        runDDTest("2.0", false);
+    }
 
-    void runDDTest(String version) throws IOException, InterruptedException {
+    void runDDTest(String version, Boolean runAllTests) throws IOException, InterruptedException {
         System.out.println("Starting Enum Data Dictionary Test for DD " + version);
 
         ProcessBuilder builder = new ProcessBuilder(
@@ -53,9 +54,7 @@ public class LookupEnumTest {
                 "runDDTests",
                 "-p", "refServLocal.json",
                 "-v", version,
-                "-l", "10"
-        // ,"-a"
-        );
+                "-l", "10", runAllTests ? "-a" : "");
 
         Map<String, String> env = builder.environment();
 

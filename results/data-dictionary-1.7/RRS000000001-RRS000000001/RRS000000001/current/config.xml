@@ -1,1 +1,0 @@
-<?xml version="1.0" encoding="utf-8" ?><OutputScript>  <ClientSettings>    <WebAPIURI>http://localhost:8080/core/2.0.0/</WebAPIURI>    <AuthenticationType>authorization_code</AuthenticationType>    <BearerToken>reso-test-token</BearerToken>  </ClientSettings></OutputScript>

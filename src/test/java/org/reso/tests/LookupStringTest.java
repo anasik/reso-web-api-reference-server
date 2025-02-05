@@ -39,11 +39,12 @@ public class LookupStringTest {
         runDDTest("1.7");
     }
 
-    // @Test
-    // @Order(2)
-    // void testLookupStringDD20() throws IOException, InterruptedException {
-    // runDDTest("2.0");
-    // }
+    @Test
+    @Order(2)
+    void testLookupStringDD20() throws Exception {
+        setEnv("LOOKUP_TYPE", "STRING");
+        runDDTest("2.0");
+    }
 
     void runDDTest(String version) throws IOException, InterruptedException {
         System.out.println("Starting Enum Data Dictionary Test for DD " + version);
@@ -54,9 +55,7 @@ public class LookupStringTest {
                 "runDDTests",
                 "-p", "refServLocal.json",
                 "-v", version,
-                "-l", "10"
-        // ,"-a"
-        );
+                "-l", "10", "-a");
         Map<String, String> env = builder.environment();
 
         env.put("LOOKUP_TYPE", lookupType);

@@ -39,11 +39,12 @@ public class LookupEnumFlagsTest {
         runDDTest("1.7");
     }
 
-    // @Test
-    // @Order(2)
-    // void testLookupEnumFlagsDD20() throws IOException, InterruptedException {
-    // runDDTest("2.0");
-    // }
+    @Test
+    @Order(2)
+    void testLookupEnumFlagsDD20() throws Exception {
+        setEnv("LOOKUP_TYPE", "ENUM_FLAGS");
+        runDDTest("2.0");
+    }
 
     void runDDTest(String version) throws IOException, InterruptedException {
         System.out.println("Starting Enum Data Dictionary Test for DD " + version);
@@ -53,9 +54,7 @@ public class LookupEnumFlagsTest {
                 "runDDTests",
                 "-p", "refServLocal.json",
                 "-v", version,
-                "-l", "10"
-        // ,"-a"
-        );
+                "-l", "10", "-a");
         Map<String, String> env = builder.environment();
 
         String lookupType = "ENUM_FLAGS";
