@@ -68,6 +68,7 @@ Before running the tests, ensure you have the following installed:
 - `reso-certification-utils` installed globally  
   _(Check with `where reso-certification-utils` on Windows or `which reso-certification-utils` on Linux/Mac)_
 - on `.env` add the env variable: `WEB_API_COMMANDER_PATH=<your-webapicommander-repo-folder>\web-api-commander` 
+- `refServLocal.json` should be on the root of `<your-webapicommander-repo-folder>\web-api-commander` folder
 ### Running Tests
 To execute all JUnit tests, run:
 
