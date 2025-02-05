@@ -55,3 +55,68 @@ In the case this happens, and you have fixed the source of the error and need to
 ## Customizing your setup
 
 You can have your own SQL database.  Just copy the `env-default` file to `.env` and modify the appropriate properties.
+
+
+## Testing the RESO Web API Reference Server
+
+### Prerequisites
+Before running the tests, ensure you have the following installed:
+- **Java 8+** (Ensure it's properly set in your environment)
+- **Gradle**
+- **Docker** (with Docker Compose)
+- **Node.js** (for `reso-certification-utils`)
+- `reso-certification-utils` installed globally  
+  _(Check with `where reso-certification-utils` on Windows or `which reso-certification-utils` on Linux/Mac)_
+
+### Running Tests
+To execute all JUnit tests, run:
+
+```sh
+./gradlew test --rerun-tasks --info
+```
+
+This will:
+
+- Start the RESO Reference Server (via Docker).
+- Run Data Dictionary compliance tests.
+- Validate different Lookup Types (STRING, ENUM_FLAGS, ENUM_COLLECTION).
+
+
+
+### Testing Specific Lookup Types
+
+Each test modifies the ```LOOKUP_TYPE``` environment variable dynamically.
+
+To run tests manually with a specific lookup type:
+
+##### Linux / macOS:
+```sh
+LOOKUP_TYPE=STRING ./gradlew test --tests org.reso.tests.LookupEnumTest
+LOOKUP_TYPE=ENUM_FLAGS ./gradlew test --tests org.reso.tests.LookupEnumFlagsTest
+LOOKUP_TYPE=ENUM_COLLECTION ./gradlew test --tests org.reso.tests.LookupStringTest
+```
+
+##### Windows:
+```sh
+$env:LOOKUP_TYPE="STRING"; ./gradlew test --tests org.reso.tests.LookupEnumTest
+$env:LOOKUP_TYPE="ENUM_FLAGS"; ./gradlew test --tests org.reso.tests.LookupEnumFlagsTest
+$env:LOOKUP_TYPE="ENUM_COLLECTION"; ./gradlew test --tests org.reso.tests.LookupStringTest
+```
+
+### Debugging Issues
+- **Docker Stops During Tests?**
+Check the container logs:
+```sh
+docker ps -a
+docker logs <container_id>
+```
+Restart Docker and try again
+
+- **```LOOKUP_TYPE``` Not Changing?**
+```java
+System.out.println("LOOKUP_TYPE: " + System.getenv("LOOKUP_TYPE"));
+```
+- **Gradle Not Picking Up Changes?**
+```sh
+./gradlew clean test --rerun-tasks --info
+```
