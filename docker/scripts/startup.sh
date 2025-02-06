@@ -54,25 +54,6 @@ if ./gradlew war; then
     exit 1
   fi
 
-  # # ✅ Deploy WAR file to Tomcat
-  # if [ -f "./build/libs/core.war" ]; then
-  #   echo "🚀 Deploying core.war to Tomcat..."
-  #   cp ./build/libs/core.war /usr/local/tomcat/webapps/ROOT.war
-  #   echo "✅ Deployment successful!"
-  # else
-  #   echo "❌ ERROR: WAR file not found: ./build/libs/core.war"
-  #   exit 1
-  # fi
-
-  # # ✅ Rename and move RESOservice WAR
-  # if [ -f "./build/libs/RESOservice-1.0.war" ]; then
-  #   mv ./build/libs/RESOservice-1.0.war ./build/libs/core.war
-  #   echo "✅ Moved RESOservice-1.0.war to core.war"
-  # else
-  #   echo "❌ ERROR: WAR file not found: ./build/libs/RESOservice-1.0.war"
-  #   exit 1
-  # fi
-
 else
   echo "❌ ERROR: Gradle build failed!"
   exit 1
