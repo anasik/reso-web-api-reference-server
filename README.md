@@ -119,3 +119,4 @@ System.out.println("LOOKUP_TYPE: " + System.getenv("LOOKUP_TYPE"));
 ```sh
 ./gradlew clean test --rerun-tasks --info
 ```
+

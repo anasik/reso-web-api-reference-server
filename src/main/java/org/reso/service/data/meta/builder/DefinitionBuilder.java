@@ -184,7 +184,9 @@ public class DefinitionBuilder {
                newField = enumFieldInfo;
 
                ArrayList<GenericGSONobject> lookupList = lookupMap.get(fieldType);
-               boolean setFlags = false; // lookupList.size()>1;
+               Boolean isFlagsLookupType = LOOKUP_TYPE.equals("ENUM_FLAGS"); // add if statement to check if its null
+
+               boolean setFlags = (isFlagsLookupType && lookupList.size() > 1);
 
                for (GenericGSONobject lookupItem : lookupList) {
                   String enumValueString = (String) lookupItem.getProperty("lookupValue");
@@ -227,6 +229,7 @@ public class DefinitionBuilder {
                }
 
                if (setFlags) {
+                  LOG.info("DEBUG: setFlags is " + setFlags);
                   enumFieldInfo.setFlags();
                }
 

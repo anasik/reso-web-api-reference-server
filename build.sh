@@ -22,11 +22,11 @@ fi
 docker-compose -f docker-compose.builder.yml --project-name $BUILDER_PROJECT up -d builder
 
 # Wait until the container is fully running
-# echo "Waiting for builder container to be ready..."
-# until docker-compose -f docker-compose.builder.yml --project-name $BUILDER_PROJECT ps | grep "builder" | grep "Up"; do
-#     sleep 2
-#     echo "Still waiting..."
-# done
+echo "Waiting for builder container to be ready..."
+until docker-compose -f docker-compose.builder.yml --project-name $BUILDER_PROJECT ps | grep "builder" | grep "Up"; do
+    sleep 2
+    echo "Still waiting..."
+done
 
 # Run startup script inside the builder container
 docker-compose -f docker-compose.builder.yml --project-name $BUILDER_PROJECT exec builder sh /usr/src/app/docker/scripts/startup.sh
