@@ -4,6 +4,7 @@ import org.apache.olingo.commons.api.data.*;
 import org.apache.olingo.commons.api.edm.EdmEntitySet;
 import org.apache.olingo.commons.api.edm.EdmEntityType;
 import org.apache.olingo.commons.api.edm.EdmNavigationProperty;
+import org.apache.olingo.commons.api.edm.EdmPrimitiveTypeKind;
 import org.apache.olingo.commons.api.edm.EdmProperty;
 import org.apache.olingo.commons.api.format.ContentType;
 import org.apache.olingo.commons.api.http.HttpHeader;
@@ -18,13 +19,22 @@ import org.apache.olingo.server.api.uri.*;
 import org.apache.olingo.server.api.uri.queryoption.*;
 import org.apache.olingo.server.api.uri.queryoption.expression.Expression;
 import org.apache.olingo.server.api.uri.queryoption.expression.Member;
+import org.bson.BsonDocument;
+import org.bson.Document;
+import org.bson.conversions.Bson;
 import org.reso.service.data.common.CommonDataProcessing;
 import org.reso.service.data.meta.FieldInfo;
+import org.reso.service.data.meta.MongoDBFilterExpressionVisitor;
 import org.reso.service.data.meta.MySQLFilterExpressionVisitor;
 import org.reso.service.data.meta.PostgreSQLFilterExpressionVisitor;
 import org.reso.service.data.meta.ResourceInfo;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import com.mongodb.MongoClientSettings;
+import com.mongodb.client.FindIterable;
+import com.mongodb.client.MongoCollection;
+import com.mongodb.client.model.Filters;
 
 import java.io.InputStream;
 import java.net.URI;
@@ -160,8 +170,7 @@ public class GenericEntityCollectionProcessor implements EntityCollectionProcess
       ArrayList<FieldInfo> fields = resource.getFieldList();
       EntityCollection entCollection = new EntityCollection();
       List<Entity> productList = entCollection.getEntities();
-      Map<String, String> properties = System.getenv();
-
+      Bson mongoCriteria = null;
       try {
          String primaryFieldName = resource.getPrimaryKeyName();
          FilterOption filter = uriInfo.getFilterOption();
@@ -173,6 +182,10 @@ public class GenericEntityCollectionProcessor implements EntityCollectionProcess
             } else if (this.dbType.equals("postgres")) {
                sqlCriteria = filter.getExpression().accept(new PostgreSQLFilterExpressionVisitor(resource));
             } else if (this.dbType.equals("mongodb")) {
+               String filterJson = filter.getExpression().accept(new MongoDBFilterExpressionVisitor(resource));
+               LOG.info("MongoDB Filter JSON: " + filterJson);
+               mongoCriteria = BsonDocument.parse(filterJson);
+            } else {
                sqlCriteria = filter.getExpression().accept(new PostgreSQLFilterExpressionVisitor(resource));
             }
          }
@@ -180,31 +193,42 @@ public class GenericEntityCollectionProcessor implements EntityCollectionProcess
          HashMap<String, Boolean> selectLookup = null;
          Statement statement = connect.createStatement();
          String queryString = null;
-         String dbType = getDatabaseType(); // get from db
          LOG.info("Detected Database Type: " + getDatabaseType());
 
          if (isCount) {
             queryString = "SELECT count(*) AS rowcount FROM " + resource.getTableName();
+         } else if (!isCount && this.dbType.equals("mongodb")) {
+            queryString = "{}";
          } else {
-            SelectOption selectOption = uriInfo.getSelectOption();
-            if (false) {
-               selectLookup = new HashMap<>();
-               selectLookup.put(primaryFieldName, true);
-               for (SelectItem sel : selectOption.getSelectItems()) {
-                  String val = sel.getResourcePath().getUriResourceParts().get(0).toString();
-                  selectLookup.put(val, true);
-               }
-               EdmEntityType edmEntityType = edmEntitySet.getEntityType();
-               String selectList = odata.createUriHelper().buildContextURLSelectList(edmEntityType, null, selectOption);
-               LOG.debug("Select list:" + selectList);
-               queryString = "SELECT " + selectList + " FROM " + resource.getTableName();
-            } else {
-               queryString = "SELECT * FROM " + resource.getTableName();
-            }
+            queryString = "SELECT * FROM " + resource.getTableName();
          }
+
+         // SelectOption selectOption = uriInfo.getSelectOption();
 
          if (sqlCriteria != null && !sqlCriteria.isEmpty()) {
             queryString += " WHERE " + sqlCriteria;
+         }
+
+         LOG.info("Executing query in MongoDB...");
+
+         // Pagination logic: Ensure LIMIT is only added when it's > 0
+         TopOption topOption = uriInfo.getTopOption();
+         int topNumber = (topOption == null) ? PAGE_SIZE : topOption.getValue();
+         SkipOption skipOption = uriInfo.getSkipOption();
+         int skipNumber = (skipOption != null) ? skipOption.getValue() : 0;
+
+         LOG.debug("dbType: " + this.dbType);
+         LOG.debug("Top: " + topNumber + ", Skip: " + skipNumber);
+
+         if (this.dbType.equals("mongodb")) {
+            LOG.info("Executing MongoDB Query with criteria: "
+                  + (mongoCriteria != null
+                        ? mongoCriteria.toBsonDocument(Document.class, MongoClientSettings.getDefaultCodecRegistry())
+                              .toJson()
+                        : "{}"));
+            // Convert the filter string to BSON format
+            return resource.executeMongoQuery(mongoCriteria, skipNumber, topNumber);
+
          }
 
          OrderByOption orderByOption = uriInfo.getOrderByOption();
@@ -226,15 +250,7 @@ public class GenericEntityCollectionProcessor implements EntityCollectionProcess
             }
          }
 
-         // Pagination logic: Ensure LIMIT is only added when it's > 0
-         TopOption topOption = uriInfo.getTopOption();
-         int topNumber = (topOption == null) ? PAGE_SIZE : topOption.getValue();
-         SkipOption skipOption = uriInfo.getSkipOption();
-         int skipNumber = (skipOption != null) ? skipOption.getValue() : 0;
-
-         LOG.debug("dbType: " + this.dbType);
-         LOG.debug("Top: " + topNumber + ", Skip: " + skipNumber);
-
+         LOG.info("SQL Query after workaround: " + queryString);
          if (topNumber > 0) {
             if (this.dbType.equals("mysql")) {
                queryString += " LIMIT " + topNumber + ", " + skipNumber;
@@ -256,28 +272,24 @@ public class GenericEntityCollectionProcessor implements EntityCollectionProcess
             LOG.warn("Skipping LIMIT because topNumber is 0");
          }
 
-         LOG.info("Final SQL Query: " + queryString);
-
-         LOG.info("SQL Query: " + queryString);
+         LOG.info("Final SQL Query before execution: " + queryString);
          ResultSet resultSet = statement.executeQuery(queryString);
 
-         // Retorno especial para $count
-         if (isCount && resultSet.next()) {
-            int size = resultSet.getInt("rowcount");
-            LOG.debug("Size = " + size);
-            entCollection.setCount(size);
-            return entCollection;
-         }
-
-         ArrayList<String> resourceRecordKeys = new ArrayList<>();
          while (resultSet.next()) {
             Entity ent = CommonDataProcessing.getEntityFromRow(resultSet, resource, selectLookup);
-            resourceRecordKeys.add(ent.getProperty(primaryFieldName).getValue().toString());
+
+            if (isCount) {
+               int size = resultSet.getInt("rowcount");
+               LOG.debug("Size = " + size);
+               entCollection.setCount(size);
+            }
+
             productList.add(ent);
          }
-
          statement.close();
-      } catch (Exception e) {
+      } catch (
+
+      Exception e) {
          LOG.error("Server Error occurred in reading " + resource.getResourceName(), e);
          return entCollection;
       }

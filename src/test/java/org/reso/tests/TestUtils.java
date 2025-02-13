@@ -121,4 +121,45 @@ public class TestUtils {
 
         return providerUoi + "-" + providerUsi + "/" + recipientUoi;
     }
+
+
+    //example: $ java -jar build/libs/web-api-commander.jar --saveGetRequest --uri 'https://api.server.com/OData/Property?$filter=ListPrice gt 100000&$top=100' --bearerToken abc123 --outputFile response.
+    //./gradlew testWebApiCore -D${ARG_VERSION}=${DEFAULT_WEB_API_VERSION} -D${ARG_RESOSCRIPT_PATH}=/path/to/web-api-core.resoscript -D${ARG_SHOW_RESPONSES}=true" +
+    //java -jar build/libs/web-api-commander.jar --runRESOScript --inputFile webapiserver.resoscript --generateQueries
+    public static int runWebApiCoreTest() throws IOException, InterruptedException {
+        String lookupType = System.getenv("LOOKUP_TYPE");
+        System.out.println("Running Web API Core test with LOOKUP_TYPE = " + lookupType);
+
+        // Determine the correct command
+        ProcessBuilder builder;
+        if (isWindows()) {
+            builder = new ProcessBuilder("cmd.exe", "/c",
+                    "", "testWebApiCore ",
+                    "-d", "2.1.0",
+                    "-u", "http://localhost:8080");
+        } else {
+            builder = new ProcessBuilder(
+                    "", "testWebApiCore",
+                    "-d", "2.1.0",
+                    "-u", "http://localhost:8080");
+        }
+
+        builder.directory(new File(System.getProperty("user.dir")));
+        Process process = builder.start();
+
+        // Capture output for debugging
+        BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
+        reader.lines().forEach(System.out::println);
+
+        // Capture errors
+        BufferedReader errorReader = new BufferedReader(new InputStreamReader(process.getErrorStream()));
+        errorReader.lines().forEach(System.err::println);
+
+        // Wait for process to finish
+        int exitCode = process.waitFor();
+        System.out.println("Web API Core Test exited with code: " + exitCode);
+
+        return exitCode;
+    }
+
 }

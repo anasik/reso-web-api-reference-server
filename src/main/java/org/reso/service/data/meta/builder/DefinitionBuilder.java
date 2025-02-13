@@ -172,7 +172,18 @@ public class DefinitionBuilder {
 
             FullQualifiedName fqn = EDM_MAP.get(fieldType);
             if (fqn != null) {
-               newField = new FieldInfo(fieldName, fqn);
+               if (fqn.equals(EdmPrimitiveTypeKind.Int64.getFullQualifiedName())) {
+                  // Força conversão para Long
+                  Object rawValue = field.getProperty("value");
+                  Long longValue = (rawValue != null) ? Long.parseLong(rawValue.toString()) : null;
+                  newField = new FieldInfo(fieldName, fqn);
+
+                  if (longValue != null) {
+                     newField.addAnnotation(longValue.toString(), "RESO.OData.Metadata.DefaultValue");
+                  }
+               } else {
+                  newField = new FieldInfo(fieldName, fqn);
+               }
             } else if (fieldType.startsWith(EDM_ENUM)) {
                String lookupName = fieldType.substring(EDM_ENUM.length() + 1);
                EnumFieldInfo enumFieldInfo = new EnumFieldInfo(fieldName,
@@ -266,6 +277,10 @@ public class DefinitionBuilder {
                }
                // In cases where we have EnumType metadata being used in a String LookupType
                // server, we must add LookupName annotations
+               if (LOOKUP_TYPE.equals("STRING") && fieldType.equals("Edm.Int64")) {
+                  newField.addAnnotation("Edm.String", "RESO.OData.Metadata.LookupName");
+               }
+
                if (LOOKUP_TYPE.equals("STRING") && fieldType.equals("Edm.String") && fieldTypeName != null
                      && !fieldTypeName.isEmpty()) {
                   newField.addAnnotation(fieldTypeName, "RESO.OData.Metadata.LookupName");
