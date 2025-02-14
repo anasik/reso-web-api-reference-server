@@ -166,6 +166,38 @@ public class GenericEntityCollectionProcessor implements EntityCollectionProcess
    }
 
    protected EntityCollection getData(EdmEntitySet edmEntitySet, UriInfo uriInfo, boolean isCount,
+         ResourceInfo resource)
+         throws ODataApplicationException {
+      if (this.dbType.equals("mongodb")) {
+         return getDataFromMongo(edmEntitySet, uriInfo, isCount, resource);
+      } else {
+         return getDataFromSQL(edmEntitySet, uriInfo, isCount, resource);
+      }
+   }
+
+   protected EntityCollection getDataFromMongo(EdmEntitySet edmEntitySet, UriInfo uriInfo, boolean isCount,
+         ResourceInfo resource)
+         throws ODataApplicationException {
+      EntityCollection entCollection = new EntityCollection();
+      try {
+         FilterOption filter = uriInfo.getFilterOption();
+         Bson mongoCriteria = null;
+         if (filter != null) {
+            String filterJson = filter.getExpression().accept(new MongoDBFilterExpressionVisitor(resource));
+            mongoCriteria = BsonDocument.parse(filterJson);
+         }
+
+         int topNumber = Optional.ofNullable(uriInfo.getTopOption()).map(TopOption::getValue).orElse(PAGE_SIZE);
+         int skipNumber = Optional.ofNullable(uriInfo.getSkipOption()).map(SkipOption::getValue).orElse(0);
+
+         return resource.executeMongoQuery(mongoCriteria, skipNumber, topNumber);
+      } catch (Exception e) {
+         LOG.error("Server Error occurred in reading {}", resource.getResourceName(), e);
+      }
+      return entCollection;
+   }
+
+   protected EntityCollection getDataFromSQL(EdmEntitySet edmEntitySet, UriInfo uriInfo, boolean isCount,
          ResourceInfo resource) throws ODataApplicationException {
       ArrayList<FieldInfo> fields = resource.getFieldList();
       EntityCollection entCollection = new EntityCollection();
@@ -181,10 +213,6 @@ public class GenericEntityCollectionProcessor implements EntityCollectionProcess
                sqlCriteria = filter.getExpression().accept(new MySQLFilterExpressionVisitor(resource));
             } else if (this.dbType.equals("postgres")) {
                sqlCriteria = filter.getExpression().accept(new PostgreSQLFilterExpressionVisitor(resource));
-            } else if (this.dbType.equals("mongodb")) {
-               String filterJson = filter.getExpression().accept(new MongoDBFilterExpressionVisitor(resource));
-               LOG.info("MongoDB Filter JSON: " + filterJson);
-               mongoCriteria = BsonDocument.parse(filterJson);
             } else {
                sqlCriteria = filter.getExpression().accept(new PostgreSQLFilterExpressionVisitor(resource));
             }
@@ -197,8 +225,6 @@ public class GenericEntityCollectionProcessor implements EntityCollectionProcess
 
          if (isCount) {
             queryString = "SELECT count(*) AS rowcount FROM " + resource.getTableName();
-         } else if (!isCount && this.dbType.equals("mongodb")) {
-            queryString = "{}";
          } else {
             queryString = "SELECT * FROM " + resource.getTableName();
          }
@@ -219,17 +245,6 @@ public class GenericEntityCollectionProcessor implements EntityCollectionProcess
 
          LOG.debug("dbType: " + this.dbType);
          LOG.debug("Top: " + topNumber + ", Skip: " + skipNumber);
-
-         if (this.dbType.equals("mongodb")) {
-            LOG.info("Executing MongoDB Query with criteria: "
-                  + (mongoCriteria != null
-                        ? mongoCriteria.toBsonDocument(Document.class, MongoClientSettings.getDefaultCodecRegistry())
-                              .toJson()
-                        : "{}"));
-            // Convert the filter string to BSON format
-            return resource.executeMongoQuery(mongoCriteria, skipNumber, topNumber);
-
-         }
 
          OrderByOption orderByOption = uriInfo.getOrderByOption();
          if (orderByOption != null) {
@@ -256,12 +271,6 @@ public class GenericEntityCollectionProcessor implements EntityCollectionProcess
                queryString += " LIMIT " + topNumber + ", " + skipNumber;
             } else if (this.dbType.equals("postgres")) {
                queryString += " LIMIT " + topNumber + " OFFSET " + skipNumber;
-            } else if (this.dbType.equals("mongodb")) {
-               if (topNumber > 0) {
-                  queryString += " LIMIT " + topNumber + " OFFSET " + skipNumber;
-               } else {
-                  LOG.warn("Skipping LIMIT for MongoDB since topNumber is 0");
-               }
             } else {
                // Default case
                if (topNumber > 0) {

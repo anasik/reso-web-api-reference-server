@@ -115,24 +115,6 @@ public class MongoDBFilterExpressionVisitor implements ExpressionVisitor<String>
     @Override
     public String visitMethodCall(MethodKind methodCall, List<String> parameters)
             throws ExpressionVisitException, ODataApplicationException {
-        if (parameters.isEmpty() && methodCall.equals(MethodKind.NOW)) {
-            return "CURRENT_DATE";
-        }
-        String firsEntityParam = parameters.get(0);
-        switch (methodCall) {
-            case CONTAINS:
-                return firsEntityParam + " LIKE '%" + extractFromStringValue(parameters.get(1)) + "%'";
-            case STARTSWITH:
-                return firsEntityParam + " LIKE '" + extractFromStringValue(parameters.get(1)) + "%'";
-            case ENDSWITH:
-                return firsEntityParam + " LIKE '%" + extractFromStringValue(parameters.get(1));
-            case DAY:
-                return "DAY(" + firsEntityParam + ")";
-            case MONTH:
-                return "MONTH(" + firsEntityParam + ")";
-            case YEAR:
-                return "YEAR(" + firsEntityParam + ")";
-        }
         throw new ODataApplicationException("Method call " + methodCall + " not implemented",
                 HttpStatusCode.NOT_IMPLEMENTED.getStatusCode(), Locale.ENGLISH);
     }
