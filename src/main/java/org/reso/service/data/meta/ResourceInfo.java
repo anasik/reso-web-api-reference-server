@@ -1,5 +1,6 @@
 package org.reso.service.data.meta;
 
+import com.mongodb.client.FindIterable;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
 import com.mongodb.client.MongoCollection;
@@ -7,8 +8,13 @@ import com.mongodb.client.MongoDatabase;
 import com.mongodb.jdbc.MongoConnection;
 import com.mongodb.jdbc.MongoDatabaseMetaData;
 import com.mongodb.jdbc.MongoResultSet;
+
+import org.bson.BsonDocument;
 import org.bson.Document;
+import org.bson.conversions.Bson;
+
 import com.mongodb.client.MongoIterable;
+import com.mongodb.client.model.Sorts;
 
 import org.apache.olingo.commons.api.data.Entity;
 import org.apache.olingo.commons.api.data.EntityCollection;
@@ -37,6 +43,8 @@ public class ResourceInfo {
     protected String primaryKeyName;
 
     protected static final Logger LOG = LoggerFactory.getLogger(ResourceInfo.class);
+    private static MongoClient mongoClient = null;
+    private String syncConnStr = System.getenv().get("MONGO_SYNC_CONNECTION_STR");
 
     /**
      * Accessors
@@ -81,8 +89,9 @@ public class ResourceInfo {
         while (pkColumns.next()) {
             Integer pkPosition = pkColumns.getInt("KEY_SEQ");
             String pkColumnName = pkColumns.getString("COLUMN_NAME");
-            LOG.debug("" + pkColumnName + " is the " + pkPosition + ". column of the primary key of the table " + tableName);
-            primaryKey = pkColumnName; //.toLowerCase();  // lowercase only needed for PostgreSQL
+            LOG.debug("" + pkColumnName + " is the " + pkPosition + ". column of the primary key of the table "
+                    + tableName);
+            primaryKey = pkColumnName; // .toLowerCase(); // lowercase only needed for PostgreSQL
         }
 
         String[] splitKey = primaryKey.split("Numeric");
@@ -106,9 +115,9 @@ public class ResourceInfo {
         MongoDatabase database = mongoClient.getDatabase("reso");
         MongoCollection<Document> collection = database.getCollection(tableName);
 
-//      Uncomment to query Lookup endpoint
-//      MongoDatabase database = mongoClient.getDatabase("reso");
-//      MongoCollection<Document> collection = database.getCollection("Property");
+        // Uncomment to query Lookup endpoint
+        // MongoDatabase database = mongoClient.getDatabase("reso");
+        // MongoCollection<Document> collection = database.getCollection("Property");
         ArrayList<Document> indexDocs = collection.listIndexes().into(new ArrayList<Document>());
 
         // List indexes and iterate over them
@@ -140,12 +149,49 @@ public class ResourceInfo {
         this.primaryKeyName = primaryKey;
     }
 
-
     public Entity getData(EdmEntitySet edmEntitySet, List<UriParameter> keyPredicates) {
         return null;
     }
 
-    public EntityCollection getData(EdmEntitySet edmEntitySet, UriInfo uriInfo, boolean isCount) throws ODataApplicationException {
+    public EntityCollection getData(EdmEntitySet edmEntitySet, UriInfo uriInfo, boolean isCount)
+            throws ODataApplicationException {
         return null;
     }
+
+    public EntityCollection executeMongoQuery(Bson filter) {
+        return executeMongoQuery(filter, 0, 999);
+    }
+
+    public EntityCollection executeMongoQuery(Bson filter, int skip, int limit) {
+        EntityCollection entCollection = new EntityCollection();
+        List<Entity> entityList = entCollection.getEntities();
+
+        Bson sort = Sorts.ascending("_id");
+        mongoClient = MongoClients.create(syncConnStr);
+        MongoDatabase mongoDatabase = mongoClient.getDatabase("reso");
+
+        try {
+            MongoCollection<Document> collection = mongoDatabase.getCollection(this.getTableName());
+            FindIterable<Document> results;
+
+            if (filter != null) {
+                results = collection.find(filter).sort(sort).skip(skip).limit(limit);
+            } else {
+                results = collection.find().sort(sort).skip(skip).limit(limit);
+            }
+
+            for (Document doc : results) {
+                Entity ent = CommonDataProcessing.getEntityFromDocument(doc, this);
+                entityList.add(ent);
+            }
+
+        } catch (Exception e) {
+            LOG.error("Error executing MongoDB query", e);
+        }
+
+        mongoClient.close();
+        return entCollection;
+
+    }
+
 }
