@@ -169,14 +169,32 @@ public class GenericEntityCollectionProcessor implements EntityCollectionProcess
          ResourceInfo resource)
          throws ODataApplicationException {
       if (this.dbType.equals("mongodb")) {
-         return getDataFromMongo(edmEntitySet, uriInfo, isCount, resource);
+         OrderByOption orderByOption = uriInfo.getOrderByOption();
+         Bson sortCriteria = null;
+         if (orderByOption != null) {
+            List<OrderByItem> orderItemList = orderByOption.getOrders();
+            for (OrderByItem orderByItem : orderItemList) {
+               Expression expression = orderByItem.getExpression();
+               if (expression instanceof Member) {
+                  UriResource uriResource = ((Member) expression).getResourcePath().getUriResourceParts().get(0);
+                  if (uriResource instanceof UriResourcePrimitiveProperty) {
+                     String sortField = ((UriResourcePrimitiveProperty) uriResource).getProperty().getName();
+                     Bson sortOrder = orderByItem.isDescending() ? com.mongodb.client.model.Sorts.descending(sortField)
+                           : com.mongodb.client.model.Sorts.ascending(sortField);
+                     sortCriteria = (sortCriteria == null) ? sortOrder
+                           : com.mongodb.client.model.Sorts.orderBy(sortCriteria, sortOrder);
+                  }
+               }
+            }
+         }
+         return getDataFromMongo(edmEntitySet, uriInfo, isCount, resource, sortCriteria);
       } else {
          return getDataFromSQL(edmEntitySet, uriInfo, isCount, resource);
       }
    }
 
    protected EntityCollection getDataFromMongo(EdmEntitySet edmEntitySet, UriInfo uriInfo, boolean isCount,
-         ResourceInfo resource)
+         ResourceInfo resource, Bson sortCriteria)
          throws ODataApplicationException {
       EntityCollection entCollection = new EntityCollection();
       try {
@@ -189,8 +207,14 @@ public class GenericEntityCollectionProcessor implements EntityCollectionProcess
 
          int topNumber = Optional.ofNullable(uriInfo.getTopOption()).map(TopOption::getValue).orElse(PAGE_SIZE);
          int skipNumber = Optional.ofNullable(uriInfo.getSkipOption()).map(SkipOption::getValue).orElse(0);
+         LOG.info("sortCriteria: " + sortCriteria);
+         if (sortCriteria != null) {
+            LOG.info("sortCriteria != null " + sortCriteria);
+            return resource.executeMongoQuery(mongoCriteria, skipNumber, topNumber, sortCriteria);
+         } else {
+            return resource.executeMongoQuery(mongoCriteria, skipNumber, topNumber);
+         }
 
-         return resource.executeMongoQuery(mongoCriteria, skipNumber, topNumber);
       } catch (Exception e) {
          LOG.error("Server Error occurred in reading {}", resource.getResourceName(), e);
       }

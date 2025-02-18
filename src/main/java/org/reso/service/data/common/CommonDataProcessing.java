@@ -10,6 +10,7 @@ import org.apache.olingo.server.api.uri.UriResource;
 import org.apache.olingo.server.api.uri.UriResourceNavigation;
 import org.apache.olingo.server.api.uri.queryoption.*;
 import org.bson.Document;
+import org.bson.types.Decimal128;
 import org.reso.service.data.definition.LookupDefinition;
 import org.reso.service.data.meta.*;
 import org.slf4j.Logger;
@@ -519,7 +520,21 @@ public class CommonDataProcessing {
          } else if (fieldType.equals(EdmPrimitiveTypeKind.Boolean.getFullQualifiedName())) {
             return (value instanceof Boolean) ? value : Boolean.parseBoolean(value.toString());
          } else if (fieldType.equals(EdmPrimitiveTypeKind.Decimal.getFullQualifiedName())) {
-            return (value instanceof Number) ? new BigDecimal(value.toString()) : null;
+            if (value instanceof Decimal128) {
+               return ((Decimal128) value).bigDecimalValue();
+            } else if (value instanceof Number) {
+               return new BigDecimal(value.toString());
+            } else if (value instanceof String) {
+               try {
+                  return new BigDecimal((String) value);
+               } catch (NumberFormatException e) {
+                  LOG.warn("converting String to BigDecimal on field " + fieldName + ": " + value, e);
+                  return null;
+               }
+            } else {
+               LOG.warn("unexpected Decimal on field " + fieldName + ": " + value.getClass());
+               return null;
+            }
          } else if (fieldType.equals(EdmPrimitiveTypeKind.Double.getFullQualifiedName())) {
             return (value instanceof Number) ? ((Number) value).doubleValue() : null;
          } else if (fieldType.equals(EdmPrimitiveTypeKind.Int32.getFullQualifiedName())) {

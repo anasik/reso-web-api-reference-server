@@ -44,7 +44,7 @@ public class ResourceInfo {
 
     protected static final Logger LOG = LoggerFactory.getLogger(ResourceInfo.class);
     private static MongoClient mongoClient = null;
-    private String syncConnStr = System.getenv().get("MONGO_SYNC_CONNECTION_STR");
+    private static String syncConnStr = System.getenv().get("MONGO_SYNC_CONNECTION_STR");
 
     /**
      * Accessors
@@ -79,6 +79,13 @@ public class ResourceInfo {
             this.fqn = new FullQualifiedName(namespace, getResourceName());
 
         return this.fqn;
+    }
+
+    private static synchronized MongoClient getMongoClient() {
+        if (mongoClient == null) {
+            mongoClient = MongoClients.create(syncConnStr);
+        }
+        return mongoClient;
     }
 
     public void findPrimaryKey(Connection connect) throws SQLException {
@@ -167,7 +174,7 @@ public class ResourceInfo {
         List<Entity> entityList = entCollection.getEntities();
 
         Bson sort = Sorts.ascending("_id");
-        mongoClient = MongoClients.create(syncConnStr);
+        MongoClient mongoClient = getMongoClient();
         MongoDatabase mongoDatabase = mongoClient.getDatabase("reso");
 
         try {
@@ -189,9 +196,30 @@ public class ResourceInfo {
             LOG.error("Error executing MongoDB query", e);
         }
 
-        mongoClient.close();
         return entCollection;
 
+    }
+
+    public EntityCollection executeMongoQuery(Bson filter, int skip, int limit, Bson sort) {
+        EntityCollection entityCollection = new EntityCollection();
+        List<Entity> entities = entityCollection.getEntities();
+
+        MongoClient mongoClient = getMongoClient();
+        MongoDatabase mongoDatabase = mongoClient.getDatabase("reso");
+        MongoCollection<Document> collection = mongoDatabase.getCollection(this.tableName);
+        FindIterable<Document> iterable = (filter == null) ? collection.find() : collection.find(filter);
+
+        if (sort != null) {
+            iterable = iterable.sort(sort);
+        }
+
+        iterable = iterable.skip(skip).limit(limit);
+
+        for (Document doc : iterable) {
+            entities.add(CommonDataProcessing.getEntityFromDocument(doc, this));
+        }
+
+        return entityCollection;
     }
 
 }

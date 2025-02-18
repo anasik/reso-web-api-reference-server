@@ -19,7 +19,10 @@ import com.mongodb.client.model.Filters;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.Instant;
+import java.time.format.DateTimeParseException;
 import java.util.Arrays;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
@@ -38,6 +41,7 @@ public class MongoDBFilterExpressionVisitor implements ExpressionVisitor<String>
     @Override
     public String visitBinaryOperator(BinaryOperatorKind operator, String left, String right)
             throws ExpressionVisitException, ODataApplicationException {
+
         String mongoOperator;
         switch (operator) {
             case EQ:
@@ -49,14 +53,14 @@ public class MongoDBFilterExpressionVisitor implements ExpressionVisitor<String>
             case GT:
                 mongoOperator = "$gt";
                 break;
-            case GE:
-                mongoOperator = "$gte";
-                break;
             case LT:
                 mongoOperator = "$lt";
                 break;
             case LE:
                 mongoOperator = "$lte";
+                break;
+            case GE:
+                mongoOperator = "$gte";
                 break;
             default:
                 throw new ODataApplicationException("Unsupported operator: " + operator,
@@ -66,25 +70,42 @@ public class MongoDBFilterExpressionVisitor implements ExpressionVisitor<String>
         left = left.replace("property.", "");
 
         boolean isIntegerField = false;
+        boolean isDateTimeOffsetField = false;
+
         if (resourceInfo.getFieldList() != null) {
             for (FieldInfo field : resourceInfo.getFieldList()) {
-                if (field.getFieldName().equals(left)
-                        && (field.getType().equals(EdmPrimitiveTypeKind.Int32.getFullQualifiedName())
-                                || field.getType().equals(EdmPrimitiveTypeKind.Int64.getFullQualifiedName()))) {
-                    isIntegerField = true;
+                if (field.getFieldName().equals(left)) {
+                    if (field.getType().equals(EdmPrimitiveTypeKind.Int32.getFullQualifiedName())
+                            || field.getType().equals(EdmPrimitiveTypeKind.Int64.getFullQualifiedName())) {
+                        isIntegerField = true;
+                    } else if (field.getType().equals(EdmPrimitiveTypeKind.DateTimeOffset.getFullQualifiedName())) {
+                        isDateTimeOffsetField = true;
+                    }
                     break;
                 }
             }
         }
 
-        Document comparison;
-        if (isIntegerField) {
-            comparison = new Document("$expr", new Document(mongoOperator, Arrays.asList(
-                    new Document("$toInt", "$" + left),
-                    Integer.parseInt(right))));
-        } else {
-            comparison = new Document(left, new Document(mongoOperator, right));
+        Object rightValue = right;
+
+        try {
+            if (isIntegerField) {
+                rightValue = Integer.parseInt(right);
+            } else if (isDateTimeOffsetField) {
+                if (right.matches("^\\d+$")) { // timestamp em millis
+                    rightValue = new Date(Long.parseLong(right));
+                } else {
+                    rightValue = Date.from(Instant.parse(right.replace("\"", "")));
+                }
+            }
+        } catch (Exception e) {
+            throw new ODataApplicationException("Invalid value for field '" + left + "': " + right,
+                    HttpStatusCode.BAD_REQUEST.getStatusCode(), Locale.ENGLISH, e);
         }
+
+        Document comparison = new Document(left, new Document(mongoOperator, rightValue));
+
+        LOG.info("MongoDB Filter Expression: {}", comparison.toJson());
 
         return comparison.toJson();
     }
@@ -115,7 +136,12 @@ public class MongoDBFilterExpressionVisitor implements ExpressionVisitor<String>
     @Override
     public String visitMethodCall(MethodKind methodCall, List<String> parameters)
             throws ExpressionVisitException, ODataApplicationException {
-        throw new ODataApplicationException("Method call " + methodCall + " not implemented",
+
+        if (methodCall == MethodKind.NOW) {
+            return String.valueOf(System.currentTimeMillis());
+        }
+
+        throw new ODataApplicationException("Unsupported method call: " + methodCall.name(),
                 HttpStatusCode.NOT_IMPLEMENTED.getStatusCode(), Locale.ENGLISH);
     }
 
