@@ -222,4 +222,19 @@ public class ResourceInfo {
         return entityCollection;
     }
 
+    public int executeMongoCount(Bson filter) {
+        MongoClient mongoClient = getMongoClient();
+        MongoDatabase mongoDatabase = mongoClient.getDatabase("reso");
+        MongoCollection<Document> collection = mongoDatabase.getCollection(this.tableName);
+
+        try {
+            long count = (filter == null) ? collection.countDocuments() : collection.countDocuments(filter);
+            LOG.info("Count result for collection {}: {}", this.tableName, count);
+            return (int) count;
+        } catch (Exception e) {
+            LOG.error("Error counting documents in collection {}", this.tableName, e);
+            return 0;
+        }
+    }
+
 }

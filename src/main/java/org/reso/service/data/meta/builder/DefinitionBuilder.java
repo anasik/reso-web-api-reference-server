@@ -173,7 +173,7 @@ public class DefinitionBuilder {
             FullQualifiedName fqn = EDM_MAP.get(fieldType);
             if (fqn != null) {
                if (fqn.equals(EdmPrimitiveTypeKind.Int64.getFullQualifiedName())) {
-                  // Força conversão para Long
+
                   Object rawValue = field.getProperty("value");
                   Long longValue = (rawValue != null) ? Long.parseLong(rawValue.toString()) : null;
                   newField = new FieldInfo(fieldName, fqn);

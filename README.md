@@ -120,3 +120,6 @@ System.out.println("LOOKUP_TYPE: " + System.getenv("LOOKUP_TYPE"));
 ./gradlew clean test --rerun-tasks --info
 ```
 
+### TODO
+- Update olingo to 4.10.0
+- 

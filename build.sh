@@ -4,6 +4,15 @@
 BUILDER_PROJECT="builder-stack"
 APP_PROJECT="app-stack"
 
+# Delete build/libs folder if it exists
+echo "Cleaning build/libs directory..."
+if [ -d "build/libs" ]; then
+    rm -rf build/libs
+    echo "build/libs directory deleted."
+else
+    echo "build/libs directory does not exist. Continuing..."
+fi
+
 # Check if the user requested a builder rebuild
 if [ "$1" == "--rebuild-builder" ]; then
     echo "Forcing rebuild of the builder container with --no-cache."

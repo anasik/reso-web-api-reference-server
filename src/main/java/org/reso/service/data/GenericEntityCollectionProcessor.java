@@ -207,13 +207,30 @@ public class GenericEntityCollectionProcessor implements EntityCollectionProcess
 
          int topNumber = Optional.ofNullable(uriInfo.getTopOption()).map(TopOption::getValue).orElse(PAGE_SIZE);
          int skipNumber = Optional.ofNullable(uriInfo.getSkipOption()).map(SkipOption::getValue).orElse(0);
-         LOG.info("sortCriteria: " + sortCriteria);
-         if (sortCriteria != null) {
-            LOG.info("sortCriteria != null " + sortCriteria);
-            return resource.executeMongoQuery(mongoCriteria, skipNumber, topNumber, sortCriteria);
-         } else {
-            return resource.executeMongoQuery(mongoCriteria, skipNumber, topNumber);
+         LOG.info("Query parameters - Top: {}, Skip: {}, Sort: {}", topNumber, skipNumber, sortCriteria);
+
+         // Get total count if requested
+         CountOption countOption = uriInfo.getCountOption();
+         if (countOption != null && countOption.getValue()) {
+            LOG.info("Count requested, calculating total count");
+            long totalCount = resource.executeMongoCount(mongoCriteria);
+            entCollection.setCount((int) totalCount);
+            LOG.info("Total count: {}", totalCount);
          }
+
+         // Get the actual data
+         EntityCollection dataCollection;
+         if (sortCriteria != null) {
+            LOG.info("Executing query with sort criteria");
+            dataCollection = resource.executeMongoQuery(mongoCriteria, skipNumber, topNumber, sortCriteria);
+         } else {
+            LOG.info("Executing query without sort criteria");
+            dataCollection = resource.executeMongoQuery(mongoCriteria, skipNumber, topNumber);
+         }
+
+         // Preserve the count while getting the data
+         entCollection.getEntities().addAll(dataCollection.getEntities());
+         return entCollection;
 
       } catch (Exception e) {
          LOG.error("Server Error occurred in reading {}", resource.getResourceName(), e);
