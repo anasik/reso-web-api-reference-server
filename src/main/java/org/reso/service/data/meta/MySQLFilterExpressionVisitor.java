@@ -20,86 +20,90 @@ import org.slf4j.LoggerFactory;
 import java.util.*;
 
 import static org.reso.service.data.meta.builder.DefinitionBuilder.getLookupType;
-import static org.reso.service.servlet.RESOservlet.getConnection;
-import static org.reso.service.servlet.RESOservlet.isMongo;
+import static org.reso.service.servlet.RESOservlet.getMongoClient;
 
 /**
  * $filter
  */
 public class MySQLFilterExpressionVisitor implements ExpressionVisitor<String> {
     private static final Logger LOG = LoggerFactory.getLogger(MySQLFilterExpressionVisitor.class);
-    private static final Map<BinaryOperatorKind, String> BINARY_OPERATORS = new HashMap<BinaryOperatorKind, String>() {{
-        put(BinaryOperatorKind.ADD, " + ");
-        put(BinaryOperatorKind.AND, " AND ");
-        put(BinaryOperatorKind.DIV, " / ");
-        put(BinaryOperatorKind.EQ, " = ");
-        put(BinaryOperatorKind.GE, " >= ");
-        put(BinaryOperatorKind.GT, " > ");
-        put(BinaryOperatorKind.LE, " <= ");
-        put(BinaryOperatorKind.LT, " < ");
-        put(BinaryOperatorKind.MOD, " % ");
-        put(BinaryOperatorKind.MUL, " * ");
-        put(BinaryOperatorKind.NE, " <> ");
-        put(BinaryOperatorKind.OR, " OR ");
-        put(BinaryOperatorKind.SUB, " - ");
-        put(BinaryOperatorKind.HAS, " has ");
-    }};
+    private static final Map<BinaryOperatorKind, String> BINARY_OPERATORS = new HashMap<BinaryOperatorKind, String>() {
+        {
+            put(BinaryOperatorKind.ADD, " + ");
+            put(BinaryOperatorKind.AND, " AND ");
+            put(BinaryOperatorKind.DIV, " / ");
+            put(BinaryOperatorKind.EQ, " = ");
+            put(BinaryOperatorKind.GE, " >= ");
+            put(BinaryOperatorKind.GT, " > ");
+            put(BinaryOperatorKind.LE, " <= ");
+            put(BinaryOperatorKind.LT, " < ");
+            put(BinaryOperatorKind.MOD, " % ");
+            put(BinaryOperatorKind.MUL, " * ");
+            put(BinaryOperatorKind.NE, " <> ");
+            put(BinaryOperatorKind.OR, " OR ");
+            put(BinaryOperatorKind.SUB, " - ");
+            put(BinaryOperatorKind.HAS, " has ");
+        }
+    };
 
-   private final String       entityAlias;
-   private final ResourceInfo resourceInfo;
+    private final String entityAlias;
+    private final ResourceInfo resourceInfo;
 
-   public MySQLFilterExpressionVisitor(ResourceInfo resourceInfo) {
-      this.entityAlias = resourceInfo.getTableName();
-      this.resourceInfo = resourceInfo;
-   }
+    public MySQLFilterExpressionVisitor(ResourceInfo resourceInfo) {
+        this.entityAlias = resourceInfo.getTableName();
+        this.resourceInfo = resourceInfo;
+    }
 
-   @Override
-   public String visitBinaryOperator(BinaryOperatorKind operator, String left, String right)
+    @Override
+    public String visitBinaryOperator(BinaryOperatorKind operator, String left, String right)
             throws ExpressionVisitException, ODataApplicationException {
-      String strOperator = BINARY_OPERATORS.get(operator);
+        String strOperator = BINARY_OPERATORS.get(operator);
 
         if (strOperator == null) {
             throw new ODataApplicationException("Unsupported binary operation: " + operator.name(),
-                    operator == BinaryOperatorKind.HAS ?
-                            HttpStatusCode.NOT_IMPLEMENTED.getStatusCode() :
-                            HttpStatusCode.BAD_REQUEST.getStatusCode(), Locale.ENGLISH);
+                    operator == BinaryOperatorKind.HAS ? HttpStatusCode.NOT_IMPLEMENTED.getStatusCode()
+                            : HttpStatusCode.BAD_REQUEST.getStatusCode(),
+                    Locale.ENGLISH);
         }
-        if(strOperator.equals(" has ")){
+        if (strOperator.equals(" has ")) {
             String[] parts = left.split("\\.");
-            FieldInfo field = resourceInfo.getFieldList().stream().filter(fieldInfo -> fieldInfo.getFieldName().equals(parts[1])).findFirst().get();
+            FieldInfo field = resourceInfo.getFieldList().stream()
+                    .filter(fieldInfo -> fieldInfo.getFieldName().equals(parts[1])).findFirst().get();
             boolean isSingle = !field.isCollection() && !field.isFlags();
-            String unformatted = " EXISTS (SELECT 1 FROM lookup_value AS v JOIN lookup AS l ON l.LookupKey = v.LookupKey WHERE v.FieldName = 'COLUMN_NAME' AND v.ResourceRecordKey = TABLE_NAME.PRIMARY_KEY_NAME AND l.LegacyOdataValue = " + right + ")";
-            return unformatted.replaceAll("COLUMN_NAME", parts[1]).replaceAll("TABLE_NAME", parts[0]).replaceAll("PRIMARY_KEY_NAME", resourceInfo.getPrimaryKeyName());
+            String unformatted = " EXISTS (SELECT 1 FROM lookup_value AS v JOIN lookup AS l ON l.LookupKey = v.LookupKey WHERE v.FieldName = 'COLUMN_NAME' AND v.ResourceRecordKey = TABLE_NAME.PRIMARY_KEY_NAME AND l.LegacyOdataValue = "
+                    + right + ")";
+            return unformatted.replaceAll("COLUMN_NAME", parts[1]).replaceAll("TABLE_NAME", parts[0])
+                    .replaceAll("PRIMARY_KEY_NAME", resourceInfo.getPrimaryKeyName());
         }
         return left + strOperator + right;
     }
 
-   // @TODO I'm unsure where this would be called.
-   @Override public String visitBinaryOperator(BinaryOperatorKind operator, String s, List<String> list)
-            throws ExpressionVisitException, ODataApplicationException
-   {
-      String strOperator = BINARY_OPERATORS.get(operator);
-      throw new ODataApplicationException("Unsupported binary operation: " + operator.name(),
-                                          operator == BinaryOperatorKind.HAS ?
-                                                   HttpStatusCode.NOT_IMPLEMENTED.getStatusCode() :
-                                                   HttpStatusCode.BAD_REQUEST.getStatusCode(), Locale.ENGLISH);
-   }
-
-   @Override
-   public String visitUnaryOperator(UnaryOperatorKind operator, String operand)
+    // @TODO I'm unsure where this would be called.
+    @Override
+    public String visitBinaryOperator(BinaryOperatorKind operator, String s, List<String> list)
             throws ExpressionVisitException, ODataApplicationException {
-      switch (operator) {
-         case NOT:
-            return "NOT " + operand;
-         case MINUS:
-            return "-" + operand;
-      }
-      throw new ODataApplicationException("Wrong unary operator: " + operator,
-                                          HttpStatusCode.BAD_REQUEST.getStatusCode(), Locale.ENGLISH);
-   }
+        String strOperator = BINARY_OPERATORS.get(operator);
+        throw new ODataApplicationException("Unsupported binary operation: " + operator.name(),
+                operator == BinaryOperatorKind.HAS ? HttpStatusCode.NOT_IMPLEMENTED.getStatusCode()
+                        : HttpStatusCode.BAD_REQUEST.getStatusCode(),
+                Locale.ENGLISH);
+    }
 
-   @Override
-   public String visitMethodCall(MethodKind methodCall, List<String> parameters)
+    @Override
+    public String visitUnaryOperator(UnaryOperatorKind operator, String operand)
+            throws ExpressionVisitException, ODataApplicationException {
+        switch (operator) {
+            case NOT:
+                return "NOT " + operand;
+            case MINUS:
+                return "-" + operand;
+        }
+        throw new ODataApplicationException("Wrong unary operator: " + operator,
+                HttpStatusCode.BAD_REQUEST.getStatusCode(), Locale.ENGLISH);
+    }
+
+    @Override
+    public String visitMethodCall(MethodKind methodCall, List<String> parameters)
             throws ExpressionVisitException, ODataApplicationException {
         if (parameters.isEmpty() && methodCall.equals(MethodKind.NOW)) {
             return "CURRENT_DATE";
@@ -123,19 +127,19 @@ public class MySQLFilterExpressionVisitor implements ExpressionVisitor<String> {
                 HttpStatusCode.NOT_IMPLEMENTED.getStatusCode(), Locale.ENGLISH);
     }
 
-   @Override
-   public String visitLiteral(Literal literal) throws ExpressionVisitException, ODataApplicationException {
-      String literalAsString = literal.getText();
-      if (literal.getType() == null) {
-         literalAsString = "NULL";
-      }
-      if (literal.getType().getFullQualifiedName().equals( EdmPrimitiveTypeKind.DateTimeOffset.getFullQualifiedName() ) )
-      {
-         return "'"+literalAsString+"'";
-      }
+    @Override
+    public String visitLiteral(Literal literal) throws ExpressionVisitException, ODataApplicationException {
+        String literalAsString = literal.getText();
+        if (literal.getType() == null) {
+            literalAsString = "NULL";
+        }
+        if (literal.getType().getFullQualifiedName()
+                .equals(EdmPrimitiveTypeKind.DateTimeOffset.getFullQualifiedName())) {
+            return "'" + literalAsString + "'";
+        }
 
-      return literalAsString;
-   }
+        return literalAsString;
+    }
 
     @Override
     public String visitMember(Member member) throws ExpressionVisitException, ODataApplicationException {
@@ -156,39 +160,47 @@ public class MySQLFilterExpressionVisitor implements ExpressionVisitor<String> {
                 UriResourcePrimitiveProperty primitiveProperty = (UriResourcePrimitiveProperty) first;
                 UriResourceLambdaAny any = (UriResourceLambdaAny) second;
                 String x = this.visitLambdaExpression("ANY", any.getLambdaVariable(), any.getExpression());
-                return x.replaceAll("COLUMN_NAME", primitiveProperty.getProperty().getName()).replaceAll("TABLE_NAME", entityAlias).replaceAll("PRIMARY_KEY_NAME", resourceInfo.getPrimaryKeyName());
+                return x.replaceAll("COLUMN_NAME", primitiveProperty.getProperty().getName())
+                        .replaceAll("TABLE_NAME", entityAlias)
+                        .replaceAll("PRIMARY_KEY_NAME", resourceInfo.getPrimaryKeyName());
             } else if (resources.size() == 2 && second instanceof UriResourceLambdaAll) {
                 UriResourcePrimitiveProperty primitiveProperty = (UriResourcePrimitiveProperty) first;
                 UriResourceLambdaAll all = (UriResourceLambdaAll) second;
                 String x = this.visitLambdaExpression("ALL", all.getLambdaVariable(), all.getExpression());
-                return x.replaceAll("COLUMN_NAME", primitiveProperty.getProperty().getName()).replaceAll("TABLE_NAME", entityAlias).replaceAll("PRIMARY_KEY_NAME", resourceInfo.getPrimaryKeyName());
+                return x.replaceAll("COLUMN_NAME", primitiveProperty.getProperty().getName())
+                        .replaceAll("TABLE_NAME", entityAlias)
+                        .replaceAll("PRIMARY_KEY_NAME", resourceInfo.getPrimaryKeyName());
             }
         }
-//        while (iterator.hasNext()) {
-//            UriResource segment = (UriResource) iterator.next();
-//            if (segment instanceof UriResourceLambdaAll) {
-//                UriResourceLambdaAll all = (UriResourceLambdaAll) segment;
-//                segments.add(this.visitLambdaExpression("ALL", all.getLambdaVariable(), all.getExpression()));
-//            } else if (segment instanceof UriResourceLambdaAny) {
-//                UriResourceLambdaAny any = (UriResourceLambdaAny) segment;
-//                segments.add(this.visitLambdaExpression("ANY", any.getLambdaVariable(), any.getExpression()));
-//            } else if (segment instanceof UriResourcePartTyped) {
-//                if (segment instanceof UriResourcePrimitiveProperty) {
-//                    UriResourcePrimitiveProperty primitiveProperty = (UriResourcePrimitiveProperty) segment;
-//                    segments.add(entityAlias + "." + primitiveProperty.getProperty().getName());
-//                } else {
-////               throw new ODataApplicationException("Only primitive properties are implemented in filter expressions",
-////                                                   HttpStatusCode.NOT_IMPLEMENTED.getStatusCode(), Locale.ENGLISH);
-//                }
-//            }
-//        }
+        // while (iterator.hasNext()) {
+        // UriResource segment = (UriResource) iterator.next();
+        // if (segment instanceof UriResourceLambdaAll) {
+        // UriResourceLambdaAll all = (UriResourceLambdaAll) segment;
+        // segments.add(this.visitLambdaExpression("ALL", all.getLambdaVariable(),
+        // all.getExpression()));
+        // } else if (segment instanceof UriResourceLambdaAny) {
+        // UriResourceLambdaAny any = (UriResourceLambdaAny) segment;
+        // segments.add(this.visitLambdaExpression("ANY", any.getLambdaVariable(),
+        // any.getExpression()));
+        // } else if (segment instanceof UriResourcePartTyped) {
+        // if (segment instanceof UriResourcePrimitiveProperty) {
+        // UriResourcePrimitiveProperty primitiveProperty =
+        // (UriResourcePrimitiveProperty) segment;
+        // segments.add(entityAlias + "." + primitiveProperty.getProperty().getName());
+        // } else {
+        //// throw new ODataApplicationException("Only primitive properties are
+        // implemented in filter expressions",
+        //// HttpStatusCode.NOT_IMPLEMENTED.getStatusCode(), Locale.ENGLISH);
+        // }
+        // }
+        // }
         return segments.stream().reduce((a, b) -> a + " " + b).orElse("");
     }
 
     @Override
     public String visitEnum(EdmEnumType type, List<String> enumValues)
             throws ExpressionVisitException, ODataApplicationException {
-       return "'"+ enumValues.get(0) +"'" ;
+        return "'" + enumValues.get(0) + "'";
     }
 
     @Override
@@ -197,7 +209,7 @@ public class MySQLFilterExpressionVisitor implements ExpressionVisitor<String> {
         boolean isMongo = false;
         String lookupType = getLookupType();
         try {
-            isMongo = isMongo(getConnection());
+            isMongo = isMongo();
         } catch (Exception e) {
             LOG.error("Error checking if mongo: " + e.getMessage());
         }
@@ -208,32 +220,39 @@ public class MySQLFilterExpressionVisitor implements ExpressionVisitor<String> {
         }
         if (lookupType.equals("STRING")) {
             if (isMongo)
-                return n + " EXISTS (SELECT 1 FROM UNWIND(TABLE_NAME as p WITH PATH => COLUMN_NAME)  WHERE TABLE_NAME.PRIMARY_KEY_NAME = p.PRIMARY_KEY_NAME AND "+n+" COLUMN_NAME " + x + ")";
+                return n + " EXISTS (SELECT 1 FROM UNWIND(TABLE_NAME as p WITH PATH => COLUMN_NAME)  WHERE TABLE_NAME.PRIMARY_KEY_NAME = p.PRIMARY_KEY_NAME AND "
+                        + n + " COLUMN_NAME " + x + ")";
             else
-                return n + "EXISTS (SELECT 1 FROM TABLE_NAME as p CROSS JOIN JSON_TABLE( p.COLUMN_NAME, '$[*]' COLUMNS ( value VARCHAR(255) PATH '$' ) ) AS jt WHERE p.PRIMARY_KEY_NAME = TABLE_NAME.PRIMARY_KEY_NAME and "+n+" value " + x + ")";
+                return n + "EXISTS (SELECT 1 FROM TABLE_NAME as p CROSS JOIN JSON_TABLE( p.COLUMN_NAME, '$[*]' COLUMNS ( value VARCHAR(255) PATH '$' ) ) AS jt WHERE p.PRIMARY_KEY_NAME = TABLE_NAME.PRIMARY_KEY_NAME and "
+                        + n + " value " + x + ")";
         }
-        return n + " EXISTS (SELECT 1 FROM lookup_value AS v JOIN lookup AS l ON l.LookupKey = v.LookupKey WHERE v.FieldName = 'COLUMN_NAME' AND v.ResourceRecordKey = TABLE_NAME.PRIMARY_KEY_NAME AND "+n+" l.LegacyOdataValue " + x + ")";
+        return n + " EXISTS (SELECT 1 FROM lookup_value AS v JOIN lookup AS l ON l.LookupKey = v.LookupKey WHERE v.FieldName = 'COLUMN_NAME' AND v.ResourceRecordKey = TABLE_NAME.PRIMARY_KEY_NAME AND "
+                + n + " l.LegacyOdataValue " + x + ")";
     }
 
-   @Override
-   public String visitAlias(String aliasName) throws ExpressionVisitException, ODataApplicationException {
-      throw new ODataApplicationException("Aliases are not implemented",
-                                          HttpStatusCode.NOT_IMPLEMENTED.getStatusCode(), Locale.ENGLISH);
-   }
+    @Override
+    public String visitAlias(String aliasName) throws ExpressionVisitException, ODataApplicationException {
+        throw new ODataApplicationException("Aliases are not implemented",
+                HttpStatusCode.NOT_IMPLEMENTED.getStatusCode(), Locale.ENGLISH);
+    }
 
-   @Override
-   public String visitTypeLiteral(EdmType type) throws ExpressionVisitException, ODataApplicationException {
-      throw new ODataApplicationException("Type literals are not implemented",
-                                          HttpStatusCode.NOT_IMPLEMENTED.getStatusCode(), Locale.ENGLISH);
-   }
+    @Override
+    public String visitTypeLiteral(EdmType type) throws ExpressionVisitException, ODataApplicationException {
+        throw new ODataApplicationException("Type literals are not implemented",
+                HttpStatusCode.NOT_IMPLEMENTED.getStatusCode(), Locale.ENGLISH);
+    }
 
-   @Override
-   public String visitLambdaReference(String variableName) throws ExpressionVisitException, ODataApplicationException {
-      throw new ODataApplicationException("Lambda references are not implemented",
-                                          HttpStatusCode.NOT_IMPLEMENTED.getStatusCode(), Locale.ENGLISH);
-   }
+    @Override
+    public String visitLambdaReference(String variableName) throws ExpressionVisitException, ODataApplicationException {
+        throw new ODataApplicationException("Lambda references are not implemented",
+                HttpStatusCode.NOT_IMPLEMENTED.getStatusCode(), Locale.ENGLISH);
+    }
 
-   private String extractFromStringValue(String val) {
-      return val.substring(1, val.length() - 1);
-   }
+    private String extractFromStringValue(String val) {
+        return val.substring(1, val.length() - 1);
+    }
+
+    private boolean isMongo() {
+        return "mongodb".equalsIgnoreCase(System.getenv().getOrDefault("DB_TYPE", ""));
+    }
 }

@@ -7,6 +7,9 @@ import org.apache.olingo.commons.api.edm.EdmType;
 import org.apache.olingo.commons.api.http.HttpStatusCode;
 import org.apache.olingo.server.api.ODataApplicationException;
 import org.apache.olingo.server.api.uri.UriResource;
+import org.apache.olingo.server.api.uri.UriResourceLambdaAll;
+import org.apache.olingo.server.api.uri.UriResourceLambdaAny;
+import org.apache.olingo.server.api.uri.UriResourceLambdaVariable;
 import org.apache.olingo.server.api.uri.UriResourcePrimitiveProperty;
 import org.apache.olingo.server.api.uri.queryoption.expression.*;
 import org.bson.Document;
@@ -43,6 +46,18 @@ public class MongoDBFilterExpressionVisitor implements ExpressionVisitor<String>
     public String visitBinaryOperator(BinaryOperatorKind operator, String left, String right)
             throws ExpressionVisitException, ODataApplicationException {
         LOG.info("Binary Operator - Kind: {}, Left: {}, Right: {}", operator, left, right);
+
+        // Remove 'property.' prefix from left and right sides
+        left = left.replace("property.", "").trim();
+        right = right.replace("property.", "").trim(); // Ensure right side is also sanitized
+
+        LOG.info("Sanitized Left: {}, Sanitized Right: {}", left, right); // Debug logging
+
+        // Check if left or right is empty after sanitization
+        if (left.isEmpty() || right.isEmpty()) {
+            throw new ODataApplicationException("Invalid filter expression: left or right side is empty.",
+                    HttpStatusCode.BAD_REQUEST.getStatusCode(), Locale.ENGLISH);
+        }
 
         if (operator == BinaryOperatorKind.AND) {
             Document leftDoc = Document.parse(left);
@@ -84,8 +99,6 @@ public class MongoDBFilterExpressionVisitor implements ExpressionVisitor<String>
                         HttpStatusCode.BAD_REQUEST.getStatusCode(),
                         Locale.ENGLISH);
         }
-
-        left = left.replace("property.", "").trim();
 
         boolean isIntegerField = false;
         boolean isDecimalField = false;
@@ -216,56 +229,125 @@ public class MongoDBFilterExpressionVisitor implements ExpressionVisitor<String>
         }
         if (literal.getType().getFullQualifiedName()
                 .equals(EdmPrimitiveTypeKind.DateTimeOffset.getFullQualifiedName())) {
-            return "'" + literalAsString + "'";
+            return "'" + literalAsString + "'"; // Ensure no 'property.' prefix is added here
         }
 
-        return literalAsString;
+        // Debug logging for literals
+        LOG.info("Processing Literal: {}", literalAsString);
+        return literalAsString.replace("property.", ""); // Remove 'property.' prefix if it exists
     }
 
     @Override
     public String visitMember(Member member) throws ExpressionVisitException, ODataApplicationException {
         List<UriResource> resources = member.getResourcePath().getUriResourceParts();
-
         UriResource first = resources.get(0);
+        List<String> segments = new ArrayList<>();
+        UriResource second = null;
 
-        // TODO: Enum and ComplexType; joins
-        if (resources.size() == 1 && first instanceof UriResourcePrimitiveProperty) {
+        if (first instanceof UriResourcePrimitiveProperty) {
+
             UriResourcePrimitiveProperty primitiveProperty = (UriResourcePrimitiveProperty) first;
-            return entityAlias + "." + primitiveProperty.getProperty().getName();
-        } else {
-            throw new ODataApplicationException("Only primitive properties are implemented in filter expressions",
-                    HttpStatusCode.NOT_IMPLEMENTED.getStatusCode(), Locale.ENGLISH);
+            String propertyName = primitiveProperty.getProperty().getName();
+            if (resources.size() == 1) {
+                return entityAlias + "." + primitiveProperty.getProperty().getName();
+            } else {
+                second = resources.get(1);
+            }
+
+            if (resources.size() == 2 && second instanceof UriResourceLambdaAny) {
+
+                UriResourceLambdaAny any = (UriResourceLambdaAny) second;
+                String x = this.visitLambdaExpression("ANY", any.getLambdaVariable(), any.getExpression());
+                return x.replaceAll("enum", primitiveProperty.getProperty().getName());
+            } else if (resources.size() == 2 && second instanceof UriResourceLambdaAll) {
+                UriResourceLambdaAll all = (UriResourceLambdaAll) second;
+                String x = this.visitLambdaExpression("ALL", all.getLambdaVariable(), all.getExpression());
+                x += " }}";
+                x = x.replaceAll("enum", primitiveProperty.getProperty().getName());
+                x = x.replaceFirst("\\$eq", "\\$not\": { \"\\$elemMatch\": { \"\\$ne");
+                LOG.info("x: " + x);
+                return x;
+            }
+
+        } else if (first instanceof UriResourceLambdaVariable) {
+            return ((UriResourceLambdaVariable) first).getVariableName();
         }
+        return segments.stream().reduce((a, b) -> a + " " + b).orElse("");
     }
 
     @Override
     public String visitEnum(EdmEnumType type, List<String> enumValues)
             throws ExpressionVisitException, ODataApplicationException {
-        throw new ODataApplicationException("Enums are not implemented", HttpStatusCode.NOT_IMPLEMENTED.getStatusCode(),
-                Locale.ENGLISH);
+        return "'" + enumValues.get(0) + "'";
     }
 
     @Override
     public String visitLambdaExpression(String lambdaFunction, String lambdaVariable, Expression expression)
             throws ExpressionVisitException, ODataApplicationException {
-        LOG.info("Lambda Expression - Function: {}, Variable: {}, Expression: {}",
-                lambdaFunction, lambdaVariable, expression);
+        LOG.info("Lambda Expression Processing:");
+        LOG.info("  Function: {}", lambdaFunction);
+        LOG.info("  Variable: {}", lambdaVariable);
+        LOG.info("  Expression: {}", expression);
 
-        if ("all".equals(lambdaFunction)) {
-            LOG.info("Processing 'all' lambda function");
+        if ("all".toUpperCase().equals(lambdaFunction.toUpperCase())
+                || "any".toUpperCase().equals(lambdaFunction.toUpperCase())) {
             try {
-                String result = expression.accept(this);
-                LOG.info("Lambda expression result: {}", result);
-                return result;
+                // Extract field name and value from the expression
+                String fieldName = null;
+                String value = null;
+
+                // The field name should come from the parent context where the lambda is used
+                // We'll pass it through string replacement later with COLUMN_NAME placeholder
+                fieldName = "COLUMN_NAME"; // This will be replaced later when processing the member
+
+                LOG.info("  Field name: {}", fieldName);
+
+                // Find the corresponding field info
+                FieldInfo targetField = null;
+                if (fieldName != null && this.resourceInfo.getFieldList() != null) {
+                    for (FieldInfo field : this.resourceInfo.getFieldList()) {
+                        if (field.getFieldName().equals(fieldName)) {
+                            targetField = field;
+                            break;
+                        }
+                    }
+                }
+
+                if (targetField != null && targetField.isCollection()) {
+                    Document query = new Document();
+
+                    // Get the value being compared against
+                    String result = expression.accept(this);
+                    if (targetField instanceof EnumFieldInfo) {
+                        value = result.substring(result.indexOf("'") + 1, result.lastIndexOf("'"));
+                    } else {
+                        // For string collections, remove property. prefix and quotes
+                        value = result.replace("property.", "").trim().replace("'", "");
+                    }
+                    LOG.info("  Value to match: {}", value);
+
+                    // Create appropriate MongoDB query based on the lambda function
+                    if ("all".equals(lambdaFunction)) {
+                        query.put(fieldName, new Document("$all", Arrays.asList(value)));
+                    } else { // "any"
+                        query.put(fieldName, value);
+                    }
+                    LOG.info("  Generated query: {}", query.toJson());
+
+                    return query.toJson();
+                }
             } catch (Exception e) {
                 LOG.error("Error processing lambda expression", e);
-                throw new ODataApplicationException("Error processing lambda expression: " + e.getMessage(),
-                        HttpStatusCode.BAD_REQUEST.getStatusCode(), Locale.ENGLISH);
+                throw new ODataApplicationException(
+                        "Error processing lambda expression: " + e.getMessage(),
+                        HttpStatusCode.INTERNAL_SERVER_ERROR.getStatusCode(),
+                        Locale.ENGLISH);
             }
         }
 
-        throw new ODataApplicationException("Lambda expressions are not implemented",
-                HttpStatusCode.NOT_IMPLEMENTED.getStatusCode(), Locale.ENGLISH);
+        // Get the value being compared against
+        String result = expression.accept(this);
+        return result;
     }
 
     @Override

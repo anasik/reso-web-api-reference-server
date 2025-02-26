@@ -22,6 +22,7 @@ public class TestUtils {
      * @param key   The environment variable name
      * @param value The value to assign
      */
+    @SuppressWarnings("unchecked")
     public static void setEnv(String key, String value) throws Exception {
         Map<String, String> env = System.getenv();
         Field field = env.getClass().getDeclaredField("m");
@@ -122,10 +123,14 @@ public class TestUtils {
         return providerUoi + "-" + providerUsi + "/" + recipientUoi;
     }
 
-
-    //example: $ java -jar build/libs/web-api-commander.jar --saveGetRequest --uri 'https://api.server.com/OData/Property?$filter=ListPrice gt 100000&$top=100' --bearerToken abc123 --outputFile response.
-    //./gradlew testWebApiCore -D${ARG_VERSION}=${DEFAULT_WEB_API_VERSION} -D${ARG_RESOSCRIPT_PATH}=/path/to/web-api-core.resoscript -D${ARG_SHOW_RESPONSES}=true" +
-    //java -jar build/libs/web-api-commander.jar --runRESOScript --inputFile webapiserver.resoscript --generateQueries
+    // example: $ java -jar build/libs/web-api-commander.jar --saveGetRequest --uri
+    // 'https://api.server.com/OData/Property?$filter=ListPrice gt 100000&$top=100'
+    // --bearerToken abc123 --outputFile response.
+    // ./gradlew testWebApiCore -D${ARG_VERSION}=${DEFAULT_WEB_API_VERSION}
+    // -D${ARG_RESOSCRIPT_PATH}=/path/to/web-api-core.resoscript
+    // -D${ARG_SHOW_RESPONSES}=true" +
+    // java -jar build/libs/web-api-commander.jar --runRESOScript --inputFile
+    // webapiserver.resoscript --generateQueries
     public static int runWebApiCoreTest() throws IOException, InterruptedException {
         String lookupType = System.getenv("LOOKUP_TYPE");
         System.out.println("Running Web API Core test with LOOKUP_TYPE = " + lookupType);

@@ -35,6 +35,7 @@ import com.mongodb.MongoClientSettings;
 import com.mongodb.client.FindIterable;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.model.Filters;
+import com.mongodb.client.MongoClient;
 
 import java.io.InputStream;
 import java.net.URI;
@@ -47,21 +48,27 @@ import java.util.regex.Pattern;
 public class GenericEntityCollectionProcessor implements EntityCollectionProcessor {
    private OData odata;
    private ServiceMetadata serviceMetadata;
-   private Connection connect = null;
-   private final String dbType;
+   private final MongoClient mongoClient;
+   private Connection connect;
+   private String dbType;
    HashMap<String, ResourceInfo> resourceList = null;
    private static final Logger LOG = LoggerFactory.getLogger(GenericEntityCollectionProcessor.class);
    private static final int PAGE_SIZE = 100;
 
-   /**
-    * If you use this constructor, make sure to set your resourceInfo
-    * 
-    * @param connection
-    */
-   public GenericEntityCollectionProcessor(Connection connection, String dbType) {
+   public GenericEntityCollectionProcessor(MongoClient mongoClient) {
+      this.mongoClient = mongoClient;
+      this.dbType = System.getenv().getOrDefault("DB_TYPE", "mongodb").toLowerCase();
+      try {
+         if (!"mongodb".equals(this.dbType)) {
+            String jdbcUrl = System.getenv().getOrDefault("JDBC_URL", "");
+            String username = System.getenv().getOrDefault("DB_USERNAME", "");
+            String password = System.getenv().getOrDefault("DB_PASSWORD", "");
+            this.connect = DriverManager.getConnection(jdbcUrl, username, password);
+         }
+      } catch (SQLException e) {
+         LOG.error("Failed to establish database connection", e);
+      }
       this.resourceList = new HashMap<>();
-      this.connect = connection;
-      this.dbType = dbType;
    }
 
    public void init(OData odata, ServiceMetadata serviceMetadata) {
@@ -166,76 +173,65 @@ public class GenericEntityCollectionProcessor implements EntityCollectionProcess
    }
 
    protected EntityCollection getData(EdmEntitySet edmEntitySet, UriInfo uriInfo, boolean isCount,
-         ResourceInfo resource)
-         throws ODataApplicationException {
-      if (this.dbType.equals("mongodb")) {
-         OrderByOption orderByOption = uriInfo.getOrderByOption();
-         Bson sortCriteria = null;
-         if (orderByOption != null) {
-            List<OrderByItem> orderItemList = orderByOption.getOrders();
-            for (OrderByItem orderByItem : orderItemList) {
-               Expression expression = orderByItem.getExpression();
-               if (expression instanceof Member) {
-                  UriResource uriResource = ((Member) expression).getResourcePath().getUriResourceParts().get(0);
-                  if (uriResource instanceof UriResourcePrimitiveProperty) {
-                     String sortField = ((UriResourcePrimitiveProperty) uriResource).getProperty().getName();
-                     Bson sortOrder = orderByItem.isDescending() ? com.mongodb.client.model.Sorts.descending(sortField)
-                           : com.mongodb.client.model.Sorts.ascending(sortField);
-                     sortCriteria = (sortCriteria == null) ? sortOrder
-                           : com.mongodb.client.model.Sorts.orderBy(sortCriteria, sortOrder);
-                  }
-               }
-            }
-         }
-         return getDataFromMongo(edmEntitySet, uriInfo, isCount, resource, sortCriteria);
+         ResourceInfo resource) throws ODataApplicationException {
+      String dbType = getDatabaseType();
+      if ("mongodb".equals(dbType)) {
+         return getDataFromMongo(edmEntitySet, uriInfo, isCount, resource);
       } else {
          return getDataFromSQL(edmEntitySet, uriInfo, isCount, resource);
       }
    }
 
    protected EntityCollection getDataFromMongo(EdmEntitySet edmEntitySet, UriInfo uriInfo, boolean isCount,
-         ResourceInfo resource, Bson sortCriteria)
-         throws ODataApplicationException {
-      EntityCollection entCollection = new EntityCollection();
+         ResourceInfo resource) throws ODataApplicationException {
+      EntityCollection dataCollection = new EntityCollection();
+
       try {
-         FilterOption filter = uriInfo.getFilterOption();
-         Bson mongoCriteria = null;
-         if (filter != null) {
-            String filterJson = filter.getExpression().accept(new MongoDBFilterExpressionVisitor(resource));
-            mongoCriteria = BsonDocument.parse(filterJson);
+         FilterOption filterOption = uriInfo.getFilterOption();
+         Bson filter = null;
+         if (filterOption != null) {
+            String filterExpr = filterOption.getExpression()
+                  .accept(new MongoDBFilterExpressionVisitor(resource));
+            filter = BsonDocument.parse(filterExpr);
          }
 
-         int topNumber = Optional.ofNullable(uriInfo.getTopOption()).map(TopOption::getValue).orElse(PAGE_SIZE);
-         int skipNumber = Optional.ofNullable(uriInfo.getSkipOption()).map(SkipOption::getValue).orElse(0);
-         LOG.info("Query parameters - Top: {}, Skip: {}, Sort: {}", topNumber, skipNumber, sortCriteria);
+         TopOption topOption = uriInfo.getTopOption();
+         SkipOption skipOption = uriInfo.getSkipOption();
+         int topNumber = topOption == null ? PAGE_SIZE : topOption.getValue();
+         int skipNumber = skipOption == null ? 0 : skipOption.getValue();
 
-         // Get total count if requested
-         CountOption countOption = uriInfo.getCountOption();
-         if (countOption != null && countOption.getValue()) {
-            LOG.info("Count requested, calculating total count");
-            long totalCount = resource.executeMongoCount(mongoCriteria);
-            entCollection.setCount((int) totalCount);
-            LOG.info("Total count: {}", totalCount);
-         }
-
-         // Get the actual data
-         EntityCollection dataCollection;
-         if (sortCriteria != null) {
-            LOG.info("Executing query with sort criteria");
-            dataCollection = resource.executeMongoQuery(mongoCriteria, skipNumber, topNumber, sortCriteria);
+         if (isCount) {
+            int count = resource.executeMongoCount(filter);
+            dataCollection.setCount(count);
          } else {
-            LOG.info("Executing query without sort criteria");
-            dataCollection = resource.executeMongoQuery(mongoCriteria, skipNumber, topNumber);
+            OrderByOption orderByOption = uriInfo.getOrderByOption();
+            if (orderByOption != null) {
+               List<OrderByItem> orderItemList = orderByOption.getOrders();
+               OrderByItem orderByItem = orderItemList.get(0);
+               Expression expression = orderByItem.getExpression();
+               if (expression instanceof Member) {
+                  UriInfoResource resourcePath = ((Member) expression).getResourcePath();
+                  UriResource uriResource = resourcePath.getUriResourceParts().get(0);
+                  if (uriResource instanceof UriResourcePrimitiveProperty) {
+                     EdmProperty edmProperty = ((UriResourcePrimitiveProperty) uriResource).getProperty();
+                     String sortPropertyName = edmProperty.getName();
+                     Bson sort = orderByItem.isDescending()
+                           ? com.mongodb.client.model.Sorts.descending(sortPropertyName)
+                           : com.mongodb.client.model.Sorts.ascending(sortPropertyName);
+                     dataCollection = resource.executeMongoQuery(filter, skipNumber, topNumber, sort);
+                  }
+               }
+            } else {
+               dataCollection = resource.executeMongoQuery(filter, skipNumber, topNumber);
+            }
          }
-
-         // Preserve the count while getting the data
-         entCollection.getEntities().addAll(dataCollection.getEntities());
-         return entCollection;
-
       } catch (Exception e) {
-         LOG.error("Server Error occurred in reading {}", resource.getResourceName(), e);
+         LOG.error("Error executing MongoDB query", e);
+         throw new ODataApplicationException("Error executing MongoDB query",
+               HttpStatusCode.INTERNAL_SERVER_ERROR.getStatusCode(), Locale.ENGLISH);
       }
-      return entCollection;
+
+      return dataCollection;
    }
 
    protected EntityCollection getDataFromSQL(EdmEntitySet edmEntitySet, UriInfo uriInfo, boolean isCount,
@@ -250,13 +246,11 @@ public class GenericEntityCollectionProcessor implements EntityCollectionProcess
          String sqlCriteria = null;
 
          if (filter != null) {
-            if (this.dbType.equals("mysql")) {
-               sqlCriteria = filter.getExpression().accept(new MySQLFilterExpressionVisitor(resource));
-            } else if (this.dbType.equals("postgres")) {
-               sqlCriteria = filter.getExpression().accept(new PostgreSQLFilterExpressionVisitor(resource));
-            } else {
-               sqlCriteria = filter.getExpression().accept(new PostgreSQLFilterExpressionVisitor(resource));
+            if (this.mongoClient == null) {
+               throw new ODataApplicationException("MongoDB client not initialized",
+                     HttpStatusCode.INTERNAL_SERVER_ERROR.getStatusCode(), Locale.ENGLISH);
             }
+            sqlCriteria = filter.getExpression().accept(new MongoDBFilterExpressionVisitor(resource));
          }
 
          HashMap<String, Boolean> selectLookup = null;
@@ -376,23 +370,23 @@ public class GenericEntityCollectionProcessor implements EntityCollectionProcess
    }
 
    private String getDatabaseType() {
-      try {
-         String dbProductName = connect.getMetaData().getDatabaseProductName().toLowerCase();
-
-         if (dbProductName.contains("mysql")) {
-            LOG.info("mysql");
-            return "mysql";
-         } else if (dbProductName.contains("postgres")) {
-            LOG.info("postgres");
-            return "postgres";
-         } else if (dbProductName.contains("mongodb")) {
-            LOG.info("mongodb");
-            return "mongodb";
-         }
-      } catch (SQLException e) {
-         LOG.error("Error connection to the database", e);
+      if (this.dbType != null) {
+         return this.dbType;
       }
-      return "unknown";
+      try {
+         if (this.connect != null) {
+            String dbProductName = this.connect.getMetaData().getDatabaseProductName().toLowerCase();
+            if (dbProductName.contains("mysql")) {
+               return "mysql";
+            } else if (dbProductName.contains("postgres")) {
+               return "postgres";
+            }
+         }
+         return "mongodb";
+      } catch (SQLException e) {
+         LOG.error("Error getting database type", e);
+         return "mongodb";
+      }
    }
 
 }

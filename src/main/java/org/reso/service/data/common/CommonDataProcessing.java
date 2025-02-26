@@ -235,49 +235,25 @@ public class CommonDataProcessing {
     */
    public static void getEntityValues(ResultSet resultSet, HashMap<String, HashMap<String, Object>> entities,
          List<FieldInfo> enumFields) throws SQLException {
-      HashMap<String, EnumFieldInfo> enumFieldLookup = new HashMap<>();
-      EnumFieldInfo field = null;
-
-      String value = resultSet.getString("LookupKey");
-      String fieldName = resultSet.getString("FieldName");
       String resourceRecordKey = resultSet.getString("ResourceRecordKey");
-      HashMap<String, Object> entity = entities.get(resourceRecordKey);
-      if (entity == null) {
-         entity = new HashMap<>();
-         entities.put(resourceRecordKey, entity);
+      String lookupValue = resultSet.getString("LookupValue");
+      String fieldName = resultSet.getString("FieldName");
+
+      HashMap<String, Object> enumValues = entities.get(resourceRecordKey);
+      if (enumValues == null) {
+         enumValues = new HashMap<>();
+         entities.put(resourceRecordKey, enumValues);
       }
 
-      for (FieldInfo f : enumFields) {
-         EnumFieldInfo enumField = (EnumFieldInfo) f;
-         enumFieldLookup.put(enumField.getFieldName(), enumField);
-         if (enumField.getFieldName().equals(fieldName)) {
-            field = enumField;
-            break;
-         }
-      }
+      @SuppressWarnings("unchecked")
+      HashMap<String, HashMap<String, String>> lookupCache = LookupDefinition.getLookupCache();
+      HashMap<String, String> lookup = lookupCache.get(lookupValue);
 
-      HashMap<String, HashMap<String, Object>> lookupCache = LookupDefinition.getLookupCache();
-      HashMap<String, Object> lookup = lookupCache.get(value);
-
-      if (lookup == null) {
-         return;
-      }
-
-      Object val = field.getValueOf(lookup.get("LegacyOdataValue").toString());
-      if (field.isCollection() || field.isFlags()) {
-         Object possibleList = entity.get(fieldName);
-         ArrayList<Object> valList;
-         if (possibleList == null) {
-            valList = new ArrayList<>();
-            valList.add(val);
-            entity.put(fieldName, valList);
+      if (lookup != null) {
+         String legacyValue = lookup.get("LegacyOdataValue");
+         if (legacyValue != null) {
+            enumValues.put(fieldName, legacyValue);
          }
-         if (possibleList instanceof ArrayList) {
-            valList = (ArrayList<Object>) possibleList;
-            valList.add(val);
-         }
-      } else {
-         entity.put(fieldName, val);
       }
    }
 
@@ -484,7 +460,7 @@ public class CommonDataProcessing {
       return entity;
    }
 
-   public static Object getFieldValueFromDocument(FieldInfo field, Document doc) {
+   private static Object getFieldValueFromDocument(FieldInfo field, Document doc) {
       String fieldName = field.getFieldName();
       Object value = doc.get(fieldName);
 
@@ -492,72 +468,43 @@ public class CommonDataProcessing {
          return null;
       }
 
-      try {
-         FullQualifiedName fieldType = field.getType();
+      if (field instanceof EnumFieldInfo) {
+         @SuppressWarnings("unchecked")
+         HashMap<String, HashMap<String, String>> lookupCache = LookupDefinition.getLookupCache();
+         HashMap<String, String> lookup = lookupCache.get(value);
 
-         if (fieldType.equals(EdmPrimitiveTypeKind.String.getFullQualifiedName())) {
-            if (value instanceof List) {
-               return ((List<?>) value).stream().map(Object::toString).collect(Collectors.toList());
-            } else {
-               return value.toString();
-            }
-         } else if (fieldType.equals(EdmPrimitiveTypeKind.DateTimeOffset.getFullQualifiedName())) {
-            if (value instanceof Date) {
-               return new Timestamp(((Date) value).getTime());
-            } else if (value instanceof String) {
-               try {
-                  Instant instant = Instant.parse((String) value);
-                  return Timestamp.from(instant);
-               } catch (DateTimeParseException e) {
-                  LOG.warn("could not parse field DateTimeOffset: " + fieldName + " with value: "
-                        + value, e);
-                  return null;
-               }
-            } else {
-               LOG.warn("unexpected DateTimeOffset in field: " + fieldName + " - Type: " + value.getClass());
-               return null;
-            }
-         } else if (fieldType.equals(EdmPrimitiveTypeKind.Boolean.getFullQualifiedName())) {
-            return (value instanceof Boolean) ? value : Boolean.parseBoolean(value.toString());
-         } else if (fieldType.equals(EdmPrimitiveTypeKind.Decimal.getFullQualifiedName())) {
-            if (value instanceof Decimal128) {
-               return ((Decimal128) value).bigDecimalValue();
-            } else if (value instanceof Number) {
-               return new BigDecimal(value.toString());
-            } else if (value instanceof String) {
-               try {
-                  return new BigDecimal((String) value);
-               } catch (NumberFormatException e) {
-                  LOG.warn("converting String to BigDecimal on field " + fieldName + ": " + value, e);
-                  return null;
-               }
-            } else {
-               LOG.warn("unexpected Decimal on field " + fieldName + ": " + value.getClass());
-               return null;
-            }
-         } else if (fieldType.equals(EdmPrimitiveTypeKind.Double.getFullQualifiedName())) {
-            return (value instanceof Number) ? ((Number) value).doubleValue() : null;
-         } else if (fieldType.equals(EdmPrimitiveTypeKind.Int32.getFullQualifiedName())) {
-            return (value instanceof Number) ? ((Number) value).intValue() : null;
-         } else if (fieldType.equals(EdmPrimitiveTypeKind.Int64.getFullQualifiedName())) {
-            return (value instanceof Number) ? ((Number) value).longValue() : null;
-         } else if (fieldType.equals(EdmPrimitiveTypeKind.Date.getFullQualifiedName())) {
-            if (value instanceof Date) {
-               return new java.sql.Date(((Date) value).getTime());
-            } else if (value instanceof String) {
-               try {
-                  return java.sql.Date.valueOf(LocalDate.parse((String) value));
-               } catch (DateTimeParseException e) {
-                  LOG.warn("could not parse Date: " + fieldName + " with value: " + value, e);
-                  return null;
-               }
-            }
+         if (lookup == null) {
+            return value;
          }
-      } catch (Exception e) {
-         LOG.warn("error " + fieldName + " of type " + field.getType(), e);
+
+         return lookup.get("LegacyOdataValue");
       }
 
       return value;
+   }
+
+   public static void getEntityValues(Document doc, HashMap<String, HashMap<String, Object>> entities,
+         List<FieldInfo> enumFields) {
+      String resourceRecordKey = doc.getString("ResourceRecordKey");
+      String lookupValue = doc.getString("LookupValue");
+      String fieldName = doc.getString("FieldName");
+
+      HashMap<String, Object> enumValues = entities.get(resourceRecordKey);
+      if (enumValues == null) {
+         enumValues = new HashMap<>();
+         entities.put(resourceRecordKey, enumValues);
+      }
+
+      @SuppressWarnings("unchecked")
+      HashMap<String, HashMap<String, String>> lookupCache = LookupDefinition.getLookupCache();
+      HashMap<String, String> lookup = lookupCache.get(lookupValue);
+
+      if (lookup != null) {
+         String legacyValue = lookup.get("LegacyOdataValue");
+         if (legacyValue != null) {
+            enumValues.put(fieldName, legacyValue);
+         }
+      }
    }
 
 }

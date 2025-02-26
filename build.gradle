@@ -18,29 +18,33 @@ repositories {
 }
 
 dependencies {
-    // API dependencies (exposed to consumers of this library)
-    api libs.org.postgresql.postgresql
-    api libs.org.apache.olingo.odata.server.api
-    api libs.com.fasterxml.jackson.core.jackson.databind
-    api libs.org.apache.olingo.odata.commons.api
-    api libs.org.apache.olingo.odata.commons.core
-    api libs.org.slf4j.slf4j.api
-    api libs.com.fasterxml.jackson.core.jackson.annotations
-    api libs.com.google.code.gson.gson
-    api libs.org.mongodb.mongodb.jdbc
+    // Core dependencies
+    api 'org.apache.olingo:odata-server-api:4.9.0'
+    api 'org.apache.olingo:odata-commons-api:4.9.0'
+    api 'org.apache.olingo:odata-commons-core:4.9.0'
+    api 'com.fasterxml.jackson.core:jackson-databind:2.13.0'
+    api 'com.fasterxml.jackson.core:jackson-annotations:2.13.0'
+    api 'com.google.code.gson:gson:2.8.9'
+    api 'org.slf4j:slf4j-api:1.7.32'
 
+    // MongoDB dependencies
+    api 'org.mongodb:mongodb-driver-sync:4.4.0'
+    api 'org.mongodb:bson:4.4.0'
 
-    // Runtime-only dependencies
-    runtimeOnly libs.mysql.mysql.connector.java
-    runtimeOnly libs.org.apache.olingo.odata.server.core
-    runtimeOnly libs.org.slf4j.slf4j.simple
+    // MySQL dependencies
+    implementation 'mysql:mysql-connector-java:8.0.27'
+
+    // Runtime dependencies
+    runtimeOnly 'org.apache.olingo:odata-server-core:4.9.0'
+    runtimeOnly 'org.slf4j:slf4j-simple:1.7.32'
 
     // Test dependencies
-    testImplementation libs.org.junit.jupiter.junit.jupiter.api
-    testImplementation libs.org.junit.jupiter.junit.jupiter.engine
+    testImplementation 'org.junit.jupiter:junit-jupiter-api:5.8.1'
+    testImplementation 'org.junit.jupiter:junit-jupiter-engine:5.8.1'
     testImplementation 'org.junit.jupiter:junit-jupiter:5.8.1'
-    // Compile-only dependencies
-    compileOnly libs.javax.servlet.javax.servlet.api
+
+    // Provided dependencies
+    compileOnly 'javax.servlet:javax.servlet-api:4.0.1'
 }
 
 group = 'org.reso'
@@ -50,6 +54,7 @@ description = 'RESOservice'
 test {
     useJUnitPlatform()
     environment "LOOKUP_TYPE", "STRING"
+    environment "DB_TYPE", "mongodb"
 }
 
 // Ensure compatibility with Java 8
