@@ -4,7 +4,7 @@
 
 In order to run your own local server you need a linux / Unix environment with the following dependencies:
 
-* Maven
+* Gradle
 * docker-compose
 * wget or curl
 
@@ -23,14 +23,7 @@ Otherwise, you will have to replace `localhost` with the IP of your Docker machi
 
 ## Running with a different database
 
-If you set the `SQL_HOST` Environment Variable, then the build script will not build the test database.
-It will only build the reference server.
-
-You will need to configure the following environment variables, so the server can connect to your custom database.
-
-* SQL_HOST
-* SQL_USER
-* SQL_PASSWORD
+Set the `SQL_CONNECTION_STR` environment variable to the connection string of your database.
 
 ## ENVIRNONMENT SPECIFIC NOTES
 
@@ -43,10 +36,6 @@ Don't forget to have Docker installed for Windows.
 There is an `env-default-windows` file you should rename to `.env` before running the build script.
 
 The `docker/docker-builder` file has a line commented out for Windows users, and a line that needs to be commented out.
-
-### MAC
-
-This has not been tested.  Anyone wanting to give feedback would be appreciated.
 
 ## Build Failures
 
