@@ -272,10 +272,14 @@ public class GenericEntityProcessor implements EntityProcessor
             else if (!field.isCollection() && value != null)
                 enumValues.put(fieldName, enumField.getKeyByIndex((int)(long)(Long)value));
         }
-        if (connect instanceof com.mongodb.jdbc.MongoConnection) {
-            saveDataMongo(resource, mappedObj);
-        } else {
-            saveData(resource, mappedObj);
+        try {
+            if (connect instanceof com.mongodb.jdbc.MongoConnection) {
+                saveDataMongo(resource, mappedObj);
+            } else {
+                saveData(resource, mappedObj);
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
         }
         saveEnumData(resource, enumValues, (String) mappedObj.get(resource.getPrimaryKeyName()));
 
@@ -295,12 +299,11 @@ public class GenericEntityProcessor implements EntityProcessor
    }
 
 
-   private void saveData(ResourceInfo resource, HashMap<String, Object> mappedObj)
-   {
-      String queryString = "insert into " + resource.getTableName();
-      try
-      {
-          SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd"); // For SQL DATE
+    private void saveData(ResourceInfo resource, HashMap<String, Object> mappedObj) throws SQLException {
+        connect.setAutoCommit(false);  // Use transaction control
+        String queryString = "insert into " + resource.getTableName();
+        try {
+            SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd"); // For SQL DATE
 
           Statement statement = connect.createStatement();
          ArrayList<String> columnNames = new ArrayList<>();
@@ -354,14 +357,12 @@ public class GenericEntityProcessor implements EntityProcessor
 
          queryString = queryString+" ("+String.join(",",columnNames)+") values ("+String.join(",",columnValues)+")";
 
-         boolean success = statement.execute(queryString);
-      }
-      catch (SQLException e)
-      {
-         LOG.error(e.getMessage());
-      }
-      // Result set get the result of the SQL query
-   }
+            boolean success = statement.execute(queryString);
+        } catch (SQLException e) {
+            throw e;
+        }
+        // Result set get the result of the SQL query
+    }
 
     private void saveDataMongo(ResourceInfo resource, HashMap<String, Object> mappedObj) {
         Map<String, String> env = System.getenv();
@@ -440,9 +441,8 @@ public class GenericEntityProcessor implements EntityProcessor
     private void saveEnumData(ResourceInfo resource, String lookupEnumField, Object values, String resourceRecordKey) {
        String queryString = "INSERT INTO lookup_value (FieldName, LookupKey, ResourceName, ResourceRecordKey) VALUES (?, ?, ?, ?)";
 
-       try {
-           connect.setAutoCommit(false);  // Use transaction control
-           PreparedStatement statement = connect.prepareStatement(queryString);
+        try {
+            PreparedStatement statement = connect.prepareStatement(queryString);
 
            List<Object> valueList = new ArrayList<>();
 
@@ -499,12 +499,8 @@ public class GenericEntityProcessor implements EntityProcessor
                 documents.add(doc);
             }
 
-            try {
-                if (!documents.isEmpty()) {
-                    collection.insertMany(documents);
-                }
-            } catch (Exception e) {
-                LOG.error("Error inserting documents into MongoDB", e);
+            if (!documents.isEmpty()) {
+                collection.insertMany(documents);
             }
         }
     }
