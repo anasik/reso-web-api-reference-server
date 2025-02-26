@@ -36,7 +36,7 @@ if [ -z "${SQL_HOST}" ]; then
   if [ -e "RESODataDictionary-1.7.metadata-report.json" ]; then
       echo "RESODataDictionary-1.7.metadata-report.json exists already. Skipping."
   else
-      wget https://resostuff.blob.core.windows.net/refserverfiles/RESODataDictionary-1.7.metadata-report.json -O "RESODataDictionary-1.7.metadata-report.json"
+      wget "https://services.reso.org/metadata?version=1.7&view=all" -O "RESODataDictionary-1.7.metadata-report.json"
   fi
 #   Fetch the RESO Data Dictionary
 fi
