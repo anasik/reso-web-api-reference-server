@@ -16,6 +16,14 @@ services:
       - ENABLE_DEBUG=false
       - LOOKUP_TYPE
       - CERT_REPORT_FILENAME
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+    extra_hosts:
+      - "development.jv79a9p.mongodb.net:89.192.213.96"
+      - "ac-uyghdrj-shard-00-00.jv79a9p.mongodb.net:89.192.205.184"
+      - "ac-uyghdrj-shard-00-01.jv79a9p.mongodb.net:89.192.213.96"
+      - "ac-uyghdrj-shard-00-02.jv79a9p.mongodb.net:89.192.206.237"
     volumes:
       - ./build/libs:/usr/local/tomcat/webapps
     depends_on:

@@ -6,29 +6,22 @@ import org.apache.olingo.commons.api.edm.EdmNavigationProperty;
 import org.apache.olingo.commons.api.edm.EdmPrimitiveTypeKind;
 import org.apache.olingo.commons.api.edm.FullQualifiedName;
 import org.apache.olingo.commons.api.ex.ODataRuntimeException;
-import org.apache.olingo.server.api.uri.UriResource;
-import org.apache.olingo.server.api.uri.UriResourceNavigation;
-import org.apache.olingo.server.api.uri.queryoption.*;
 import org.bson.Document;
-import org.bson.types.Decimal128;
 import org.reso.service.data.definition.LookupDefinition;
 import org.reso.service.data.meta.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.math.BigDecimal;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
-import java.sql.Timestamp;
+import java.text.SimpleDateFormat;
 import java.time.Instant;
-import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
 import java.util.*;
-import java.util.stream.Collectors;
 
 import static org.reso.service.servlet.RESOservlet.resourceLookup;
 
@@ -80,7 +73,6 @@ public class CommonDataProcessing {
    public static Object getFieldValueFromRow(FieldInfo field, ResultSet resultSet) throws SQLException {
       String fieldName = field.getFieldName();
       Object value = null;
-      // In case of a String
       try {
          FullQualifiedName fieldType = field.getType();
          if (field.getType().equals(EdmPrimitiveTypeKind.String.getFullQualifiedName())) {
@@ -94,10 +86,6 @@ public class CommonDataProcessing {
                   value = Arrays.asList(values);
                }
             }
-         }
-         // In case of a DateTime entry
-         else if (fieldType.equals(EdmPrimitiveTypeKind.DateTimeOffset.getFullQualifiedName())) {
-            value = resultSet.getTimestamp(fieldName);
          } else if (fieldType.equals(EdmPrimitiveTypeKind.Boolean.getFullQualifiedName())) {
             value = resultSet.getBoolean(fieldName);
          } else if (fieldType.equals(EdmPrimitiveTypeKind.Decimal.getFullQualifiedName())) {
@@ -109,17 +97,18 @@ public class CommonDataProcessing {
          } else if (fieldType.equals(EdmPrimitiveTypeKind.Int64.getFullQualifiedName())) {
             value = resultSet.getLong(fieldName);
          } else if (fieldType.equals(EdmPrimitiveTypeKind.Date.getFullQualifiedName())) {
-            value = resultSet.getDate(fieldName);
+            java.sql.Date sqlDate = resultSet.getDate(fieldName);
+            if (sqlDate != null) {
+               SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd");
+               value = dateFormat.format(sqlDate);
+            }
          } else if (fieldType.equals(EdmPrimitiveTypeKind.DateTimeOffset.getFullQualifiedName())) {
             value = resultSet.getTimestamp(fieldName);
          } else {
-            // LOG.info("Field Name: " + field.getFieldName() + " Field type: " +
-            // fieldType);
+            LOG.debug("Field Name: {} Field type: {}", field.getFieldName(), fieldType);
          }
-         // @TODO: More will have to be added here, ie: Integers, as data comes in, we
-         // can extend this easily here.
       } catch (Exception e) {
-         LOG.info("Field Name: " + field.getFieldName() + " not in schema.");
+         LOG.info("Field Name: {} not in schema or error processing: {}", field.getFieldName(), e.getMessage());
       }
 
       return value;
@@ -140,16 +129,11 @@ public class CommonDataProcessing {
       String primaryFieldName = resource.getPrimaryKeyName();
       ArrayList<FieldInfo> fields = resource.getFieldList();
 
-      // Lookup Key for the primary key
       String lookupKey = null;
-      // We only need to set the entity ID later if we're providing selectLookup and
-      // the primary field name is being requested
-      // @TODO: May need different logic here, ie: selectLookup==null || ...
       if (selectLookup != null && selectLookup.get(primaryFieldName) != null) {
          lookupKey = resultSet.getString(primaryFieldName);
       }
 
-      // New entity to be populated
       Entity ent = new Entity();
 
       for (FieldInfo field : fields) {
@@ -157,28 +141,21 @@ public class CommonDataProcessing {
          Object value = null;
          if ((selectLookup == null || selectLookup.containsKey(fieldName))) {
             value = CommonDataProcessing.getFieldValueFromRow(field, resultSet);
-            // We only load Enums from the lookup_value table. @TODO: This may need revision
-            // to accommodate lookups on resource tables
             if (field instanceof EnumFieldInfo) {
                LOG.error(
-                     "ENUMS currently only handles by values in lookup_value table.  One must Define if this uses a key a numeric value.");
-            }
-            // This is Enums that are bit masks, stored on the resource.
-            else if (field.isCollection()) {
+                     "ENUMS currently only handles by values in lookup_value table. One must Define if this uses a key a numeric value.");
+            } else if (field.isCollection()) {
                if (field.getType().equals(EdmPrimitiveTypeKind.String.getFullQualifiedName())) {
                   ent.addProperty(new Property(null, fieldName, ValueType.COLLECTION_PRIMITIVE, value));
                } else {
                   ent.addProperty(new Property(null, fieldName, ValueType.ENUM, value));
                }
-            }
-            // Simply put in primitive values as entity properties.
-            else {
+            } else {
                ent.addProperty(new Property(null, fieldName, ValueType.PRIMITIVE, value));
             }
          }
       }
 
-      // Set the entity ID if the lookupKey is provided in the select lookups
       if (lookupKey != null) {
          ent.setId(createId(resource.getResourcesName(), lookupKey));
       }
@@ -343,26 +320,15 @@ public class CommonDataProcessing {
     * @return A List of HashMap representations of the entries
     */
    public static ArrayList<HashMap<String, Object>> loadAllResource(Connection connect, ResourceInfo resource) {
-      ArrayList<FieldInfo> fields = resource.getFieldList();
-
       ArrayList<HashMap<String, Object>> productList = new ArrayList<>();
 
       try {
-         String primaryFieldName = resource.getPrimaryKeyName();
-
-         String sqlCriteria = null;
-
-         // Statements allow to issue SQL queries to the database
          Statement statement = connect.createStatement();
-         // Result set get the result of the SQL query
-         String queryString = null;
-
-         queryString = "select * from " + resource.getTableName();
+         String queryString = "select * from " + resource.getTableName();
 
          LOG.info("SQL Query: " + queryString);
          ResultSet resultSet = statement.executeQuery(queryString);
 
-         // add the lookups from the database.
          while (resultSet.next()) {
             HashMap<String, Object> ent = CommonDataProcessing.getObjectFromRow(resultSet, resource, null);
             productList.add(ent);
@@ -448,6 +414,51 @@ public class CommonDataProcessing {
 
          if (field.isCollection()) {
             entity.addProperty(new Property(null, fieldName, ValueType.COLLECTION_PRIMITIVE, value));
+         } else if (field.getType().equals(EdmPrimitiveTypeKind.Date.getFullQualifiedName())) {
+            // Special handling for Edm.Date type
+            LOG.info("Creating property for Edm.Date field: {} with value: {}", fieldName, value);
+            if (value != null) {
+               try {
+                  // Ensure the value is in the correct format
+                  SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd");
+                  dateFormat.setTimeZone(TimeZone.getTimeZone("UTC"));
+                  dateFormat.setLenient(false);
+
+                  Calendar cal = Calendar.getInstance(TimeZone.getTimeZone("UTC"));
+
+                  if (value instanceof String) {
+                     LOG.debug("Parsing string date for field: {}", fieldName);
+                     Date parsedDate = dateFormat.parse((String) value);
+                     cal.setTime(parsedDate);
+                  } else if (value instanceof Date) {
+                     LOG.debug("Converting Date to Calendar for field: {}", fieldName);
+                     cal.setTime((Date) value);
+                  } else {
+                     LOG.error("Unexpected value type for Edm.Date field {}: {}", fieldName,
+                           value.getClass().getName());
+                     throw new ODataRuntimeException("Invalid value type for field " + fieldName);
+                  }
+
+                  // Normalize to midnight UTC
+                  cal.set(Calendar.HOUR_OF_DAY, 0);
+                  cal.set(Calendar.MINUTE, 0);
+                  cal.set(Calendar.SECOND, 0);
+                  cal.set(Calendar.MILLISECOND, 0);
+
+                  // Create a java.sql.Date which is more appropriate for Edm.Date
+                  java.sql.Date sqlDate = new java.sql.Date(cal.getTimeInMillis());
+                  LOG.info("Setting date property for field: {} with sql.Date value: {}", fieldName, sqlDate);
+                  entity.addProperty(new Property(null, fieldName, ValueType.PRIMITIVE, sqlDate));
+               } catch (Exception e) {
+                  LOG.error("Error creating date property for field {}: {} - Error: {}", fieldName, value,
+                        e.getMessage());
+                  throw new ODataRuntimeException(
+                        "Invalid date format for field " + fieldName + ". Expected format: yyyy-MM-dd");
+               }
+            } else {
+               LOG.debug("Setting null date property for field: {}", fieldName);
+               entity.addProperty(new Property(null, fieldName, ValueType.PRIMITIVE, null));
+            }
          } else {
             entity.addProperty(new Property(null, fieldName, ValueType.PRIMITIVE, value));
          }
@@ -478,6 +489,66 @@ public class CommonDataProcessing {
          }
 
          return lookup.get("LegacyOdataValue");
+      }
+
+      // Handle Edm.Date type fields
+      if (field.getType().equals(EdmPrimitiveTypeKind.Date.getFullQualifiedName())) {
+         LOG.info("Processing Edm.Date field: {} with value: {} of type: {}",
+               fieldName, value, value != null ? value.getClass().getName() : "null");
+
+         if (value == null) {
+            LOG.debug("Returning null for null date value in field: {}", fieldName);
+            return null;
+         }
+
+         SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd");
+         dateFormat.setTimeZone(TimeZone.getTimeZone("UTC"));
+         dateFormat.setLenient(false);
+
+         try {
+            String result;
+            if (value instanceof Date) {
+               LOG.debug("Converting Date object to string for field: {}", fieldName);
+               // Convert to UTC midnight for consistent date handling
+               Calendar cal = Calendar.getInstance(TimeZone.getTimeZone("UTC"));
+               cal.setTime((Date) value);
+               cal.set(Calendar.HOUR_OF_DAY, 0);
+               cal.set(Calendar.MINUTE, 0);
+               cal.set(Calendar.SECOND, 0);
+               cal.set(Calendar.MILLISECOND, 0);
+               result = dateFormat.format(cal.getTime());
+            } else if (value instanceof String) {
+               LOG.debug("Validating string date format for field: {}", fieldName);
+               // Parse to validate the format
+               Date parsedDate = dateFormat.parse((String) value);
+               // Format back to ensure consistent format
+               result = dateFormat.format(parsedDate);
+            } else {
+               LOG.error("Unexpected value type for Edm.Date field {}: {}", fieldName, value.getClass().getName());
+               throw new ODataRuntimeException(
+                     "Invalid value type for field " + fieldName + ". Expected Date or String in yyyy-MM-dd format");
+            }
+            LOG.info("Successfully processed date field: {} with result: {}", fieldName, result);
+            return result;
+         } catch (Exception e) {
+            LOG.error("Error processing date field {}: {} - Error: {}", fieldName, value, e.getMessage());
+            throw new ODataRuntimeException(
+                  "Invalid date format for field " + fieldName + ". Expected format: yyyy-MM-dd");
+         }
+      }
+
+      // Handle DateTimeOffset fields
+      if (field.getType().equals(EdmPrimitiveTypeKind.DateTimeOffset.getFullQualifiedName())) {
+         if (value instanceof Date) {
+            return value;
+         } else if (value instanceof String) {
+            try {
+               return Date.from(Instant.parse((String) value));
+            } catch (DateTimeParseException e) {
+               LOG.error("Invalid datetime format for field {}: {}", fieldName, value);
+               return null;
+            }
+         }
       }
 
       return value;

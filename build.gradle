@@ -26,7 +26,7 @@ dependencies {
     api 'com.fasterxml.jackson.core:jackson-annotations:2.13.0'
     api 'com.google.code.gson:gson:2.8.9'
     api 'org.slf4j:slf4j-api:1.7.32'
-
+    api 'com.google.code.findbugs:jsr305:3.0.2' 
     // MongoDB dependencies
     api 'org.mongodb:mongodb-driver-sync:4.4.0'
     api 'org.mongodb:bson:4.4.0'

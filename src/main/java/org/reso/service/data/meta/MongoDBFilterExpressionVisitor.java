@@ -31,6 +31,10 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.text.SimpleDateFormat;
+import java.text.ParseException;
+import java.util.Calendar;
+import java.util.TimeZone;
 
 public class MongoDBFilterExpressionVisitor implements ExpressionVisitor<String> {
     private static final Logger LOG = LoggerFactory.getLogger(GenericEntityCollectionProcessor.class);
@@ -103,6 +107,7 @@ public class MongoDBFilterExpressionVisitor implements ExpressionVisitor<String>
         boolean isIntegerField = false;
         boolean isDecimalField = false;
         boolean isDateTimeOffsetField = false;
+        boolean isDateField = false;
         boolean isCollectionField = false;
         boolean isEnumField = false;
 
@@ -120,6 +125,8 @@ public class MongoDBFilterExpressionVisitor implements ExpressionVisitor<String>
                         isDecimalField = true;
                     } else if (field.getType().equals(EdmPrimitiveTypeKind.DateTimeOffset.getFullQualifiedName())) {
                         isDateTimeOffsetField = true;
+                    } else if (field.getType().equals(EdmPrimitiveTypeKind.Date.getFullQualifiedName())) {
+                        isDateField = true;
                     } else if (field.isCollection()) {
                         isCollectionField = true;
                     }
@@ -146,6 +153,31 @@ public class MongoDBFilterExpressionVisitor implements ExpressionVisitor<String>
                     rightValue = new Date(Long.parseLong(right));
                 } else {
                     rightValue = Date.from(Instant.parse(right));
+                }
+            } else if (isDateField) {
+                right = right.trim().replace("'", "").replace("\"", "");
+                try {
+                    SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd");
+                    dateFormat.setTimeZone(TimeZone.getTimeZone("UTC"));
+                    dateFormat.setLenient(false);
+                    Date parsedDate = dateFormat.parse(right);
+
+                    // For MongoDB queries, we need to set the time to midnight UTC
+                    Calendar cal = Calendar.getInstance(TimeZone.getTimeZone("UTC"));
+                    cal.setTime(parsedDate);
+                    cal.set(Calendar.HOUR_OF_DAY, 0);
+                    cal.set(Calendar.MINUTE, 0);
+                    cal.set(Calendar.SECOND, 0);
+                    cal.set(Calendar.MILLISECOND, 0);
+                    rightValue = cal.getTime();
+
+                    LOG.info("Parsed date value for MongoDB query: {}", rightValue);
+                } catch (ParseException e) {
+                    throw new ODataApplicationException(
+                            "Invalid date format for field '" + left + "'. Expected format: yyyy-MM-dd",
+                            HttpStatusCode.BAD_REQUEST.getStatusCode(),
+                            Locale.ENGLISH,
+                            e);
                 }
             } else {
                 rightValue = right.replace("'", "").replace("\"", "");
@@ -227,9 +259,29 @@ public class MongoDBFilterExpressionVisitor implements ExpressionVisitor<String>
         if (literal.getType() == null) {
             literalAsString = "NULL";
         }
-        if (literal.getType().getFullQualifiedName()
-                .equals(EdmPrimitiveTypeKind.DateTimeOffset.getFullQualifiedName())) {
-            return "'" + literalAsString + "'"; // Ensure no 'property.' prefix is added here
+
+        // Handle both DateTimeOffset and Date types
+        if (literal.getType().getFullQualifiedName().equals(EdmPrimitiveTypeKind.DateTimeOffset.getFullQualifiedName())
+                ||
+                literal.getType().getFullQualifiedName().equals(EdmPrimitiveTypeKind.Date.getFullQualifiedName())) {
+            // Remove quotes if present
+            literalAsString = literalAsString.replace("'", "").replace("\"", "");
+            try {
+                // Validate the date format
+                SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd");
+                dateFormat.setLenient(false);
+                // Parse to validate
+                dateFormat.parse(literalAsString);
+                // For MongoDB queries, we need to wrap the date in quotes
+                return "'" + literalAsString + "'";
+            } catch (ParseException e) {
+                LOG.error("Invalid date format for literal: {}", literalAsString);
+                throw new ODataApplicationException(
+                        "Invalid date format. Expected format: yyyy-MM-dd",
+                        HttpStatusCode.BAD_REQUEST.getStatusCode(),
+                        Locale.ENGLISH,
+                        e);
+            }
         }
 
         // Debug logging for literals

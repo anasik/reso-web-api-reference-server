@@ -461,7 +461,11 @@ public class GenericEntityProcessor implements EntityProcessor {
         throw new ODataApplicationException("Create not implemented",
                 HttpStatusCode.NOT_IMPLEMENTED.getStatusCode(), Locale.ENGLISH);
     }
-
+   //  readEntity()
+   //  └─> getData()
+   //       └─> getDataFromMongo()
+   //            └─> handleMongoExpand()
+   
     private void saveData(ResourceInfo resource, HashMap<String, Object> mappedObj) {
         String queryString = "insert into " + resource.getTableName();
         try {
