@@ -9,8 +9,11 @@ import org.apache.olingo.commons.api.ex.ODataRuntimeException;
 import org.bson.Document;
 import org.reso.service.data.definition.LookupDefinition;
 import org.reso.service.data.meta.*;
+import org.reso.service.data.mongodb.MongoDBManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import com.mongodb.client.MongoCollection;
+import com.mongodb.client.model.Filters;
 
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -367,35 +370,99 @@ public class CommonDataProcessing {
       Property expandResourceKey = sourceEntity.getProperty(edmNavigationProperty.getName() + "Key");
       boolean isCollection = edmNavigationProperty.isCollection();
       ResourceInfo expandResource = resourceLookup.get(expandEdmEntityType.getName());
-
-      Statement expandStatement = connect.createStatement();
-      String expandQueryString = "select * from " + expandResource.getTableName() + " where KEYNAME = 'KEYVALUE'";
-
+      LOG.info("ResourceName: " + sourceResource.getResourceName());
+      LOG.info("ResourceRecordKey: " + sourceKey);
+      LOG.info("expandResource.getResourceName(): " + expandResource.getResourceName());
       if (isCollection) {
-         String keyName;
          switch (expandResource.getResourceName()) {
             case "Media":
             case "Queue":
             case "OtherPhone":
             case "SocialMedia":
             case "HistoryTransactional":
-               keyName = "ResourceName = '" + sourceResource.getResourceName() + "' AND ResourceRecordKey";
-               break;
-            default:
-               keyName = sourceResource.getPrimaryKeyName();
-         }
-         expandQueryString = expandQueryString.replace("KEYNAME", keyName).replace("KEYVALUE", sourceKey);
-      } else
-         expandQueryString = expandQueryString.replace("KEYNAME", expandResource.getPrimaryKeyName())
-               .replace("KEYVALUE", expandResourceKey.getValue().toString());
-      ResultSet expandResultSet = expandStatement.executeQuery(expandQueryString);
+               // For these resources, we need to match both ResourceName and ResourceRecordKey
+               Document query = new Document()
+                     .append("ResourceName", sourceResource.getResourceName())
+                     .append("ResourceRecordKey", sourceKey);
 
-      Entity expandEntity = null;
-      while (expandResultSet.next()) {
-         expandEntity = CommonDataProcessing.getEntityFromRow(expandResultSet, expandResource, null);
-         navigationTargetEntityCollection.getEntities().add(expandEntity);
+               LOG.info("=== Media Expansion Debug ===");
+               LOG.info("MongoDB expand query for Media: {}", query.toJson());
+               LOG.info("Source Resource Name: {}", sourceResource.getResourceName());
+               LOG.info("Source Resource Key: {}", sourceKey);
+               LOG.info("Collection to query: {}", expandResource.getTableName().toLowerCase());
+
+               try {
+                  // Use lowercase collection name for MongoDB
+                  String collectionName = expandResource.getTableName().toLowerCase();
+                  LOG.info("Using collection name: {}", collectionName);
+                  MongoCollection<Document> collection = MongoDBManager.getDatabase()
+                        .getCollection(collectionName);
+
+                  LOG.info("Executing find operation on collection");
+                  collection.find(query).forEach(doc -> {
+                     try {
+                        LOG.info("Found media document: {}", doc.toJson());
+                        Entity expandEntity = CommonDataProcessing.getEntityFromDocument(doc, expandResource);
+                        navigationTargetEntityCollection.getEntities().add(expandEntity);
+                        LOG.info("Successfully added media document to response");
+                     } catch (Exception e) {
+                        LOG.error("Error processing media document: {}", e.getMessage(), e);
+                     }
+                  });
+
+                  if (navigationTargetEntityCollection.getEntities().isEmpty()) {
+                     LOG.info("No media documents found for query: {}", query.toJson());
+                  } else {
+                     LOG.info("Found {} media documents", navigationTargetEntityCollection.getEntities().size());
+                  }
+               } catch (Exception e) {
+                  LOG.error("Error querying MongoDB for Media: {}", e.getMessage(), e);
+               }
+               break;
+
+            default:
+               // For other resources, use the standard primary key matching
+               Document defaultQuery = new Document(sourceResource.getPrimaryKeyName(), sourceKey);
+               try {
+                  // Use lowercase collection name for MongoDB
+                  String collectionName = expandResource.getTableName().toLowerCase();
+                  MongoCollection<Document> collection = MongoDBManager.getDatabase()
+                        .getCollection(collectionName);
+
+                  collection.find(defaultQuery).forEach(doc -> {
+                     try {
+                        Entity expandEntity = CommonDataProcessing.getEntityFromDocument(doc, expandResource);
+                        navigationTargetEntityCollection.getEntities().add(expandEntity);
+                     } catch (Exception e) {
+                        LOG.error("Error processing document: {}", e.getMessage());
+                     }
+                  });
+               } catch (Exception e) {
+                  LOG.error("Error querying MongoDB: {}", e.getMessage());
+               }
+         }
+      } else {
+         // For non-collection navigation properties
+         Document query = new Document(expandResource.getPrimaryKeyName(), expandResourceKey.getValue().toString());
+         try {
+            // Use lowercase collection name for MongoDB
+            String collectionName = expandResource.getTableName().toLowerCase();
+            MongoCollection<Document> collection = MongoDBManager.getDatabase()
+                  .getCollection(collectionName);
+
+            collection.find(query).forEach(doc -> {
+               try {
+                  Entity expandEntity = CommonDataProcessing.getEntityFromDocument(doc, expandResource);
+                  navigationTargetEntityCollection.getEntities().add(expandEntity);
+               } catch (Exception e) {
+                  LOG.error("Error processing document: {}", e.getMessage());
+               }
+            });
+         } catch (Exception e) {
+            LOG.error("Error querying MongoDB: {}", e.getMessage());
+         }
       }
-      expandStatement.close();
+
       return navigationTargetEntityCollection;
    }
 
@@ -416,7 +483,7 @@ public class CommonDataProcessing {
             entity.addProperty(new Property(null, fieldName, ValueType.COLLECTION_PRIMITIVE, value));
          } else if (field.getType().equals(EdmPrimitiveTypeKind.Date.getFullQualifiedName())) {
             // Special handling for Edm.Date type
-            LOG.info("Creating property for Edm.Date field: {} with value: {}", fieldName, value);
+            // Creating property for Edm.Date field
             if (value != null) {
                try {
                   // Ensure the value is in the correct format
@@ -427,15 +494,15 @@ public class CommonDataProcessing {
                   Calendar cal = Calendar.getInstance(TimeZone.getTimeZone("UTC"));
 
                   if (value instanceof String) {
-                     LOG.debug("Parsing string date for field: {}", fieldName);
+                     // Parsing string date for field
                      Date parsedDate = dateFormat.parse((String) value);
                      cal.setTime(parsedDate);
                   } else if (value instanceof Date) {
-                     LOG.debug("Converting Date to Calendar for field: {}", fieldName);
+                     // Converting Date to Calendar for field
                      cal.setTime((Date) value);
                   } else {
-                     LOG.error("Unexpected value type for Edm.Date field {}: {}", fieldName,
-                           value.getClass().getName());
+                     // Unexpected value type for Edm.Date field
+                     value.getClass().getName();
                      throw new ODataRuntimeException("Invalid value type for field " + fieldName);
                   }
 
@@ -447,11 +514,8 @@ public class CommonDataProcessing {
 
                   // Create a java.sql.Date which is more appropriate for Edm.Date
                   java.sql.Date sqlDate = new java.sql.Date(cal.getTimeInMillis());
-                  LOG.info("Setting date property for field: {} with sql.Date value: {}", fieldName, sqlDate);
                   entity.addProperty(new Property(null, fieldName, ValueType.PRIMITIVE, sqlDate));
                } catch (Exception e) {
-                  LOG.error("Error creating date property for field {}: {} - Error: {}", fieldName, value,
-                        e.getMessage());
                   throw new ODataRuntimeException(
                         "Invalid date format for field " + fieldName + ". Expected format: yyyy-MM-dd");
                }
@@ -493,11 +557,8 @@ public class CommonDataProcessing {
 
       // Handle Edm.Date type fields
       if (field.getType().equals(EdmPrimitiveTypeKind.Date.getFullQualifiedName())) {
-         LOG.info("Processing Edm.Date field: {} with value: {} of type: {}",
-               fieldName, value, value != null ? value.getClass().getName() : "null");
 
          if (value == null) {
-            LOG.debug("Returning null for null date value in field: {}", fieldName);
             return null;
          }
 
@@ -508,7 +569,7 @@ public class CommonDataProcessing {
          try {
             String result;
             if (value instanceof Date) {
-               LOG.debug("Converting Date object to string for field: {}", fieldName);
+               // "Converting Date object to string for field
                // Convert to UTC midnight for consistent date handling
                Calendar cal = Calendar.getInstance(TimeZone.getTimeZone("UTC"));
                cal.setTime((Date) value);
@@ -518,17 +579,17 @@ public class CommonDataProcessing {
                cal.set(Calendar.MILLISECOND, 0);
                result = dateFormat.format(cal.getTime());
             } else if (value instanceof String) {
-               LOG.debug("Validating string date format for field: {}", fieldName);
+               // "Validating string date format for field
                // Parse to validate the format
                Date parsedDate = dateFormat.parse((String) value);
                // Format back to ensure consistent format
                result = dateFormat.format(parsedDate);
             } else {
-               LOG.error("Unexpected value type for Edm.Date field {}: {}", fieldName, value.getClass().getName());
+               // LOG.error("Unexpected value type for Edm.Date field
                throw new ODataRuntimeException(
                      "Invalid value type for field " + fieldName + ". Expected Date or String in yyyy-MM-dd format");
             }
-            LOG.info("Successfully processed date field: {} with result: {}", fieldName, result);
+            // Successfully processed date field: {} with result
             return result;
          } catch (Exception e) {
             LOG.error("Error processing date field {}: {} - Error: {}", fieldName, value, e.getMessage());

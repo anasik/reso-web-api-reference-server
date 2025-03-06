@@ -54,7 +54,8 @@ public class RESOservlet extends HttpServlet {
         this.validator = new Validator();
         this.validator.addProvider(new BearerAuthProvider());
 
-        String mongoConnStr = env.get("MONGO_SYNC_CONNECTION_STR");
+        String mongoConnStr = env.getOrDefault("SPRING_DATA_MONGODB_URI", "mongodb://mongo-db:27017/reso");
+        LOG.info("Connecting to MongoDB with URI: {}", mongoConnStr.replaceAll(":[^/]+@", ":****@"));
 
         try {
             // Initialize MongoDB client

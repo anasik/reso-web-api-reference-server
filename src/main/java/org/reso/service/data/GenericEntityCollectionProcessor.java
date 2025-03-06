@@ -1,5 +1,6 @@
 package org.reso.service.data;
 
+import org.apache.olingo.commons.api.Constants;
 import org.apache.olingo.commons.api.data.*;
 import org.apache.olingo.commons.api.edm.EdmEntitySet;
 import org.apache.olingo.commons.api.edm.EdmEntityType;
@@ -34,6 +35,8 @@ import org.slf4j.LoggerFactory;
 import com.mongodb.MongoClientSettings;
 import com.mongodb.client.FindIterable;
 import com.mongodb.client.MongoCollection;
+import com.mongodb.client.MongoCursor;
+import com.mongodb.client.MongoDatabase;
 import com.mongodb.client.model.Filters;
 import com.mongodb.client.MongoClient;
 
@@ -42,8 +45,12 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.sql.*;
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
+
+import static org.reso.service.servlet.RESOservlet.resourceLookup;
 
 public class GenericEntityCollectionProcessor implements EntityCollectionProcessor {
    private OData odata;
@@ -187,12 +194,18 @@ public class GenericEntityCollectionProcessor implements EntityCollectionProcess
       EntityCollection dataCollection = new EntityCollection();
 
       try {
+         // Log MongoDB client state
+         LOG.info("MongoDB client status - isNull: {}", mongoClient == null);
+
+         // Initialize with empty filter
+         Document filter = new Document();
+
          FilterOption filterOption = uriInfo.getFilterOption();
-         Bson filter = null;
          if (filterOption != null) {
             String filterExpr = filterOption.getExpression()
                   .accept(new MongoDBFilterExpressionVisitor(resource));
-            filter = BsonDocument.parse(filterExpr);
+            filter = Document.parse(filterExpr);
+            LOG.info("Applied filter expression: {}", filterExpr);
          }
 
          TopOption topOption = uriInfo.getTopOption();
@@ -200,38 +213,131 @@ public class GenericEntityCollectionProcessor implements EntityCollectionProcess
          int topNumber = topOption == null ? PAGE_SIZE : topOption.getValue();
          int skipNumber = skipOption == null ? 0 : skipOption.getValue();
 
+         LOG.info("Pagination - top: {}, skip: {}", topNumber, skipNumber);
+
          if (isCount) {
             int count = resource.executeMongoCount(filter);
             dataCollection.setCount(count);
+            LOG.info("Count query result: {}", count);
          } else {
-            OrderByOption orderByOption = uriInfo.getOrderByOption();
-            if (orderByOption != null) {
-               List<OrderByItem> orderItemList = orderByOption.getOrders();
-               OrderByItem orderByItem = orderItemList.get(0);
-               Expression expression = orderByItem.getExpression();
-               if (expression instanceof Member) {
-                  UriInfoResource resourcePath = ((Member) expression).getResourcePath();
-                  UriResource uriResource = resourcePath.getUriResourceParts().get(0);
-                  if (uriResource instanceof UriResourcePrimitiveProperty) {
-                     EdmProperty edmProperty = ((UriResourcePrimitiveProperty) uriResource).getProperty();
-                     String sortPropertyName = edmProperty.getName();
-                     Bson sort = orderByItem.isDescending()
-                           ? com.mongodb.client.model.Sorts.descending(sortPropertyName)
-                           : com.mongodb.client.model.Sorts.ascending(sortPropertyName);
-                     dataCollection = resource.executeMongoQuery(filter, skipNumber, topNumber, sort);
-                  }
+            // Get the base data collection
+            MongoDatabase database = mongoClient.getDatabase("reso");
+            String collectionName = resource.getTableName().toLowerCase();
+            LOG.info("Attempting to access collection: {}", collectionName);
+
+            // List all collections in the database
+            LOG.info("Available collections in database:");
+            database.listCollectionNames().into(new ArrayList<>()).forEach(name -> LOG.info("- Collection: {}", name));
+
+            MongoCollection<Document> collection = database.getCollection(collectionName);
+            LOG.info("Collection stats: count={}", collection.countDocuments());
+
+            LOG.info("Executing MongoDB query on collection: {} with filter: {}",
+                  collection.getNamespace(),
+                  filter.toJson());
+
+            FindIterable<Document> findIterable = collection.find(filter)
+                  .skip(skipNumber)
+                  .limit(topNumber)
+                  .maxTime(5000, TimeUnit.MILLISECONDS);
+
+            // Execute query and build collection
+            try (MongoCursor<Document> cursor = findIterable.iterator()) {
+               int documentCount = 0;
+               while (cursor.hasNext()) {
+                  Document doc = cursor.next();
+                  documentCount++;
+                  LOG.info("Found document {}: {}", documentCount, doc.toJson());
+                  Entity entity = CommonDataProcessing.getEntityFromDocument(doc, resource);
+                  dataCollection.getEntities().add(entity);
                }
-            } else {
-               dataCollection = resource.executeMongoQuery(filter, skipNumber, topNumber);
+               LOG.info("Total documents processed: {}", documentCount);
             }
+
+            LOG.info("Retrieved {} documents from MongoDB", dataCollection.getEntities().size());
+         }
+
+         // Handle $expand if present
+         ExpandOption expandOption = uriInfo.getExpandOption();
+         if (expandOption != null && !dataCollection.getEntities().isEmpty()) {
+            handleMongoExpand(dataCollection, resource, expandOption);
          }
       } catch (Exception e) {
-         LOG.error("Error executing MongoDB query", e);
-         throw new ODataApplicationException("Error executing MongoDB query",
+         LOG.error("Error executing MongoDB query: {}", e.getMessage(), e);
+         LOG.error("Stack trace:", e);
+         throw new ODataApplicationException("Error executing MongoDB query: " + e.getMessage(),
                HttpStatusCode.INTERNAL_SERVER_ERROR.getStatusCode(), Locale.ENGLISH);
       }
 
       return dataCollection;
+   }
+
+   private void handleMongoExpand(EntityCollection sourceCollection, ResourceInfo sourceResource,
+         ExpandOption expandOption) {
+      if (mongoClient == null) {
+         LOG.error("MongoDB client is not initialized");
+         return;
+      }
+
+      try {
+         MongoDatabase database = mongoClient.getDatabase("reso");
+
+         for (Entity sourceEntity : sourceCollection.getEntities()) {
+            Property keyProperty = sourceEntity.getProperty("ListingKey"); // Use ListingKey instead of generic primary
+                                                                           // key
+            if (keyProperty == null || keyProperty.getValue() == null) {
+               LOG.warn("Skipping entity without ListingKey");
+               continue;
+            }
+
+            String sourceKey = keyProperty.getValue().toString();
+            LOG.info("Processing expansion for ListingKey: {}", sourceKey);
+
+            for (ExpandItem expandItem : expandOption.getExpandItems()) {
+               UriResource expandPath = expandItem.getResourcePath().getUriResourceParts().get(0);
+               if (!(expandPath instanceof UriResourceNavigation)) {
+                  continue;
+               }
+
+               UriResourceNavigation expandNavigation = (UriResourceNavigation) expandPath;
+               String expandResourceName = expandNavigation.getProperty().getType().getName();
+
+               if ("Media".equals(expandResourceName)) {
+                  Document query = new Document()
+                        .append("ResourceName", "Property")
+                        .append("ResourceRecordKey", sourceKey);
+
+                  LOG.info("Querying media with filter: {}", query.toJson());
+
+                  MongoCollection<Document> collection = database.getCollection("media");
+                  EntityCollection expandEntities = new EntityCollection();
+
+                  try (MongoCursor<Document> cursor = collection.find(query)
+                        .maxTime(5000, TimeUnit.MILLISECONDS)
+                        .iterator()) {
+                     while (cursor.hasNext()) {
+                        Document doc = cursor.next();
+                        LOG.info("Found media document: {}", doc.toJson());
+                        Entity expandEntity = CommonDataProcessing.getEntityFromDocument(doc,
+                              resourceLookup.get("Media"));
+                        expandEntities.getEntities().add(expandEntity);
+                     }
+                  }
+
+                  Link link = new Link();
+                  link.setTitle("Media");
+                  link.setType(Constants.ENTITY_NAVIGATION_LINK_TYPE);
+                  link.setInlineEntitySet(expandEntities);
+                  sourceEntity.getNavigationLinks().add(link);
+
+                  LOG.info("Added {} media items to property {}",
+                        expandEntities.getEntities().size(), sourceKey);
+               }
+            }
+         }
+      } catch (Exception e) {
+         LOG.error("Error in handleMongoExpand: {}", e.getMessage(), e);
+      }
    }
 
    protected EntityCollection getDataFromSQL(EdmEntitySet edmEntitySet, UriInfo uriInfo, boolean isCount,

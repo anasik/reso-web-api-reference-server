@@ -39,6 +39,7 @@ import org.reso.service.data.meta.FieldInfo;
 import org.reso.service.data.meta.ResourceInfo;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import com.mongodb.client.model.Sorts;
 
 import java.io.InputStream;
 import java.net.URI;
@@ -64,48 +65,22 @@ public class GenericEntityProcessor implements EntityProcessor {
     private static final int TIMEOUT = 5000; // 5 seconds timeout
     private static final int MONGO_TIMEOUT = 10000; // 10 seconds timeout for MongoDB operations
 
-    public GenericEntityProcessor(MongoClient providedMongoClient) {
+    public GenericEntityProcessor(MongoClient mongoClient) {
         Map<String, String> env = System.getenv();
         this.dbUrl = env.getOrDefault("JDBC_URL", "jdbc:mysql://mysql-db:3306/reso");
         this.dbUser = env.getOrDefault("DB_USERNAME", "root");
         this.dbPassword = env.getOrDefault("DB_PASSWORD", "root");
         this.resourceList = new HashMap<>();
 
-        // Initialize MongoDB client with proper settings
-        MongoClient initializedClient = providedMongoClient;
-        if (providedMongoClient == null) {
-            String mongoUri = env.getOrDefault("MONGO_CONNECTION_STR", "mongodb://localhost:27017");
-            try {
-                MongoClientSettings settings = MongoClientSettings.builder()
-                        .applyConnectionString(new ConnectionString(mongoUri))
-                        .applyToSslSettings(builder -> builder.enabled(true)
-                                .invalidHostNameAllowed(true))
-                        .applyToClusterSettings(
-                                builder -> builder.serverSelectionTimeout(MONGO_TIMEOUT, TimeUnit.MILLISECONDS)
-                                        .localThreshold(1000, TimeUnit.MILLISECONDS)
-                                        .mode(ClusterConnectionMode.MULTIPLE))
-                        .applyToSocketSettings(builder -> builder.connectTimeout(MONGO_TIMEOUT, TimeUnit.MILLISECONDS)
-                                .readTimeout(MONGO_TIMEOUT, TimeUnit.MILLISECONDS))
-                        .applyToConnectionPoolSettings(
-                                builder -> builder.maxWaitTime(MONGO_TIMEOUT, TimeUnit.MILLISECONDS)
-                                        .maxConnectionIdleTime(30000, TimeUnit.MILLISECONDS)
-                                        .maxSize(50)
-                                        .minSize(1))
-                        .retryWrites(true)
-                        .retryReads(true)
-                        .build();
+        this.mongoClient = mongoClient;
 
-                initializedClient = MongoClients.create(settings);
-                LOG.info("MongoDB client initialized with URI: {}",
-                        mongoUri.replaceAll(":[^/]+@", ":****@"));
-            } catch (Exception e) {
-                LOG.error("Failed to initialize MongoDB client: " + e.getMessage(), e);
-                initializedClient = null;
-            }
+        // Load MySQL driver explicitly
+        try {
+            Class.forName("com.mysql.cj.jdbc.Driver");
+        } catch (ClassNotFoundException e) {
+            LOG.error("MySQL driver not found", e);
         }
-        this.mongoClient = initializedClient;
 
-        // Test database connections
         testDatabaseConnections();
     }
 
@@ -251,21 +226,38 @@ public class GenericEntityProcessor implements EntityProcessor {
             return null;
         }
 
+        LOG.info("=== Starting getDataFromMongo ===");
+        LOG.info("Resource Name: {}", resource.getResourceName());
+        LOG.info("Resource Table Name: {}", resource.getTableName());
+        LOG.info("Has UriInfo: {}", uriInfo != null);
+        LOG.info("Has Expand Option: {}", uriInfo != null && uriInfo.getExpandOption() != null);
+        if (uriInfo != null && uriInfo.getExpandOption() != null) {
+            LOG.info("Expand Option Details:");
+            for (ExpandItem item : uriInfo.getExpandOption().getExpandItems()) {
+                LOG.info("  - Expand Item: {}", item.getResourcePath().getUriResourceParts().get(0));
+            }
+        }
+
         String primaryFieldName = resource.getPrimaryKeyName();
+        LOG.info("Primary Field Name: {}", primaryFieldName);
+
         List<FieldInfo> enumFields = CommonDataProcessing.gatherEnumFields(resource);
         HashMap<String, Object> enumValues = new HashMap<>();
         Entity product = null;
 
         Document query = new Document();
         if (keyPredicates != null) {
+            LOG.info("=== Key Predicates ===");
             for (UriParameter key : keyPredicates) {
                 String value = key.getText();
                 if (value.startsWith("'") && value.endsWith("'")) {
                     value = value.substring(1, value.length() - 1);
                 }
                 query.append(key.getName(), value);
+                LOG.info("Key: {}, Value: {}", key.getName(), value);
             }
         }
+        LOG.info("Query for main entity: {}", query.toJson());
 
         try {
             MongoDatabase database = mongoClient.getDatabase("reso");
@@ -277,8 +269,10 @@ public class GenericEntityProcessor implements EntityProcessor {
                     .first();
 
             if (doc != null) {
+                LOG.info("Found main document: {}", doc.toJson());
                 product = CommonDataProcessing.getEntityFromDocument(doc, resource);
                 String resourceRecordKey = doc.getString(primaryFieldName);
+                LOG.info("Resource Record Key: {}", resourceRecordKey);
 
                 if (!enumFields.isEmpty()) {
                     Document lookupQuery = new Document("ResourceRecordKey", resourceRecordKey);
@@ -300,11 +294,17 @@ public class GenericEntityProcessor implements EntityProcessor {
 
                 // Handle $expand for MongoDB
                 if (uriInfo != null && uriInfo.getExpandOption() != null) {
+                    LOG.info("=== Starting Media Expansion ===");
+                    LOG.info("Resource Record Key for expansion: {}", resourceRecordKey);
+                    LOG.info("Resource Name for expansion: {}", resource.getResourceName());
                     handleMongoExpand(product, resource, resourceRecordKey, uriInfo.getExpandOption());
                 }
+            } else {
+                LOG.info("No document found for query: {}", query.toJson());
             }
         } catch (Exception e) {
             LOG.error("Error querying MongoDB: " + e.getMessage(), e);
+            e.printStackTrace();
         }
 
         return product;
@@ -317,62 +317,117 @@ public class GenericEntityProcessor implements EntityProcessor {
             return;
         }
 
-        for (ExpandItem expandItem : expandOption.getExpandItems()) {
-            UriResource expandPath = expandItem.getResourcePath().getUriResourceParts().get(0);
-            if (expandPath instanceof UriResourceNavigation) {
-                UriResourceNavigation expandNavigation = (UriResourceNavigation) expandPath;
-                EdmNavigationProperty edmNavigationProperty = expandNavigation.getProperty();
-                String expandResourceName = edmNavigationProperty.getType().getName();
-                ResourceInfo expandResource = resourceLookup.get(expandResourceName);
+        LOG.info("=== Starting MongoDB Expand ===");
+        LOG.info("Source Entity Key: {}", sourceKey);
+        LOG.info("Source Resource Name: {}", sourceResource.getResourceName());
+        LOG.info("Source Resource Table Name: {}", sourceResource.getTableName());
 
-                if (expandResource != null) {
-                    try {
-                        Document query = new Document();
-                        if (edmNavigationProperty.isCollection()) {
-                            switch (expandResource.getResourceName()) {
-                                case "Media":
-                                case "Queue":
-                                case "OtherPhone":
-                                case "SocialMedia":
-                                case "HistoryTransactional":
-                                    query.append("ResourceName", sourceResource.getResourceName())
-                                            .append("ResourceRecordKey", sourceKey);
-                                    break;
-                                default:
-                                    query.append(sourceResource.getPrimaryKeyName(), sourceKey);
+        try {
+            // Use the local MongoDB instance
+            MongoDatabase database = mongoClient.getDatabase("reso");
+            LOG.info("Connected to local MongoDB database: {}", database.getName());
+
+            for (ExpandItem expandItem : expandOption.getExpandItems()) {
+                UriResource expandPath = expandItem.getResourcePath().getUriResourceParts().get(0);
+                if (expandPath instanceof UriResourceNavigation) {
+                    UriResourceNavigation expandNavigation = (UriResourceNavigation) expandPath;
+                    EdmNavigationProperty edmNavigationProperty = expandNavigation.getProperty();
+                    String expandResourceName = edmNavigationProperty.getType().getName();
+                    ResourceInfo expandResource = resourceLookup.get(expandResourceName);
+
+                    LOG.info("=== Expand Navigation Details ===");
+                    LOG.info("Expand Resource Name: {}", expandResourceName);
+                    LOG.info("Navigation Property Name: {}", edmNavigationProperty.getName());
+                    LOG.info("Is Collection: {}", edmNavigationProperty.isCollection());
+
+                    if (expandResource != null) {
+                        LOG.info("Found expand resource. Table name: {}", expandResource.getTableName());
+                        try {
+                            Document query = new Document();
+                            if (edmNavigationProperty.isCollection()) {
+                                switch (expandResource.getResourceName()) {
+                                    case "Media":
+                                    case "Queue":
+                                    case "OtherPhone":
+                                    case "SocialMedia":
+                                    case "HistoryTransactional":
+                                        query.append("ResourceName", sourceResource.getResourceName())
+                                                .append("ResourceRecordKey", sourceKey);
+                                        LOG.info("=== Media Query Details ===");
+                                        LOG.info("Collection name being queried: {}",
+                                                expandResource.getTableName().toLowerCase());
+                                        LOG.info("Full query document: {}", query.toJson());
+                                        LOG.info("ResourceName in query: {}", sourceResource.getResourceName());
+                                        LOG.info("ResourceRecordKey in query: {}", sourceKey);
+                                        break;
+                                    default:
+                                        query.append(sourceResource.getPrimaryKeyName(), sourceKey);
+                                        LOG.info("Default query constructed: {}", query.toJson());
+                                }
+                            } else {
+                                Property expandResourceKey = sourceEntity
+                                        .getProperty(edmNavigationProperty.getName() + "Key");
+                                if (expandResourceKey != null && expandResourceKey.getValue() != null) {
+                                    query.append(expandResource.getPrimaryKeyName(),
+                                            expandResourceKey.getValue().toString());
+                                }
                             }
-                        } else {
-                            Property expandResourceKey = sourceEntity
-                                    .getProperty(edmNavigationProperty.getName() + "Key");
-                            if (expandResourceKey != null && expandResourceKey.getValue() != null) {
-                                query.append(expandResource.getPrimaryKeyName(),
-                                        expandResourceKey.getValue().toString());
+
+                            EntityCollection expandEntities = new EntityCollection();
+                            String collectionName = expandResource.getTableName().toLowerCase();
+                            MongoCollection<Document> collection = database.getCollection(collectionName);
+
+                            // Check if collection exists and has documents
+                            LOG.info("=== Collection Status ===");
+                            LOG.info("Collection exists: {}", collection != null);
+                            long totalCount = collection.countDocuments();
+                            LOG.info("Total documents in collection {}: {}", collectionName, totalCount);
+
+                            // Execute the query with timeout
+                            try (MongoCursor<Document> cursor = collection.find(query)
+                                    .maxTime(5000, TimeUnit.MILLISECONDS)
+                                    .iterator()) {
+
+                                int count = 0;
+                                while (cursor.hasNext()) {
+                                    Document doc = cursor.next();
+                                    LOG.info("Found document: {}", doc.toJson());
+                                    Entity expandEntity = CommonDataProcessing.getEntityFromDocument(doc,
+                                            expandResource);
+                                    expandEntities.getEntities().add(expandEntity);
+                                    count++;
+                                }
+                                LOG.info("Found {} documents matching query", count);
+
+                                if (count == 0) {
+                                    // Log a sample document if no matches found
+                                    Document sampleDoc = collection.find().first();
+                                    if (sampleDoc != null) {
+                                        LOG.info("Sample document from collection: {}", sampleDoc.toJson());
+                                    }
+                                }
                             }
+
+                            Link link = new Link();
+                            link.setTitle(edmNavigationProperty.getName());
+                            link.setType(Constants.ENTITY_NAVIGATION_LINK_TYPE);
+                            link.setInlineEntitySet(expandEntities);
+                            sourceEntity.getNavigationLinks().add(link);
+                            LOG.info("Added {} entities to navigation link {}", expandEntities.getEntities().size(),
+                                    edmNavigationProperty.getName());
+
+                        } catch (Exception e) {
+                            LOG.error("Error executing MongoDB query: " + e.getMessage(), e);
+                            e.printStackTrace();
                         }
-
-                        EntityCollection expandEntities = new EntityCollection();
-                        try (MongoCursor<Document> cursor = mongoClient.getDatabase("reso")
-                                .getCollection(expandResource.getTableName())
-                                .find(query)
-                                .maxTime(5000, TimeUnit.MILLISECONDS)
-                                .iterator()) {
-                            while (cursor.hasNext()) {
-                                Document doc = cursor.next();
-                                Entity expandEntity = CommonDataProcessing.getEntityFromDocument(doc, expandResource);
-                                expandEntities.getEntities().add(expandEntity);
-                            }
-                        }
-
-                        Link link = new Link();
-                        link.setTitle(edmNavigationProperty.getName());
-                        link.setType(Constants.ENTITY_NAVIGATION_LINK_TYPE);
-                        link.setInlineEntitySet(expandEntities);
-                        sourceEntity.getNavigationLinks().add(link);
-                    } catch (Exception e) {
-                        LOG.error("Error handling MongoDB expand for " + expandResourceName + ": " + e.getMessage(), e);
+                    } else {
+                        LOG.error("Could not find resource info for {}", expandResourceName);
                     }
                 }
             }
+        } catch (Exception e) {
+            LOG.error("Error in handleMongoExpand: " + e.getMessage(), e);
+            e.printStackTrace();
         }
     }
 
@@ -461,11 +516,11 @@ public class GenericEntityProcessor implements EntityProcessor {
         throw new ODataApplicationException("Create not implemented",
                 HttpStatusCode.NOT_IMPLEMENTED.getStatusCode(), Locale.ENGLISH);
     }
-   //  readEntity()
-   //  └─> getData()
-   //       └─> getDataFromMongo()
-   //            └─> handleMongoExpand()
-   
+    // readEntity()
+    // └─> getData()
+    // └─> getDataFromMongo()
+    // └─> handleMongoExpand()
+
     private void saveData(ResourceInfo resource, HashMap<String, Object> mappedObj) {
         String queryString = "insert into " + resource.getTableName();
         try {
