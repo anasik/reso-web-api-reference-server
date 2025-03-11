@@ -294,10 +294,97 @@ public class GenericEntityProcessor implements EntityProcessor {
 
                 // Handle $expand for MongoDB
                 if (uriInfo != null && uriInfo.getExpandOption() != null) {
-                    LOG.info("=== Starting Media Expansion ===");
+                    LOG.info("=== Starting Expansion ===");
                     LOG.info("Resource Record Key for expansion: {}", resourceRecordKey);
                     LOG.info("Resource Name for expansion: {}", resource.getResourceName());
-                    handleMongoExpand(product, resource, resourceRecordKey, uriInfo.getExpandOption());
+                    for (ExpandItem expandItem : uriInfo.getExpandOption().getExpandItems()) {
+                        UriResource expandPath = expandItem.getResourcePath().getUriResourceParts().get(0);
+                        if (!(expandPath instanceof UriResourceNavigation)) {
+                            continue;
+                        }
+
+                        UriResourceNavigation expandNavigation = (UriResourceNavigation) expandPath;
+                        String navigationName = expandNavigation.getProperty().getName();
+                        LOG.info("Processing navigation property: {}", navigationName);
+
+                        Document expandQuery = new Document();
+                        EntityCollection expandEntities = new EntityCollection();
+                        MongoCollection<Document> expandCollection;
+
+                        switch (navigationName) {
+                            case "Media":
+                                expandQuery.append("ResourceName", "Property")
+                                        .append("ResourceRecordKey", resourceRecordKey);
+                                expandCollection = database.getCollection("media");
+                                break;
+                            case "ListAgent":
+                                Property listAgentKeyProp = product.getProperty("ListAgentKey");
+                                if (listAgentKeyProp != null && listAgentKeyProp.getValue() != null) {
+                                    String listAgentKey = listAgentKeyProp.getValue().toString();
+                                    LOG.info("Found ListAgentKey: {}", listAgentKey);
+
+                                    Document agentQuery = new Document("MemberKey", listAgentKey);
+                                    expandCollection = database.getCollection("member");
+                                    LOG.info("Querying member collection with filter: {}", agentQuery.toJson());
+
+                                    Document memberDoc = expandCollection.find(agentQuery)
+                                            .maxTime(5000, TimeUnit.MILLISECONDS)
+                                            .first();
+
+                                    if (memberDoc != null) {
+                                        LOG.info("Found member document: {}", memberDoc.toJson());
+                                        ResourceInfo memberResource = resourceLookup.get("Member");
+                                        if (memberResource != null) {
+                                            Entity memberEntity = CommonDataProcessing.getEntityFromDocument(memberDoc,
+                                                    memberResource);
+                                            Link link = new Link();
+                                            link.setTitle("ListAgent");
+                                            link.setType(Constants.ENTITY_NAVIGATION_LINK_TYPE);
+                                            link.setInlineEntity(memberEntity);
+                                            product.getNavigationLinks().add(link);
+                                            LOG.info("Added ListAgent link to property");
+                                        } else {
+                                            LOG.error("Member resource definition not found in resourceLookup");
+                                        }
+                                    } else {
+                                        LOG.warn("No member found with MemberKey: {}", listAgentKey);
+                                    }
+                                } else {
+                                    LOG.warn("No ListAgentKey found in property document");
+                                }
+                                continue;
+                            default:
+                                LOG.warn("Unsupported navigation property: {}", navigationName);
+                                continue;
+                        }
+
+                        LOG.info("Executing MongoDB query on collection {} with filter: {}",
+                                expandCollection.getNamespace().getCollectionName(), expandQuery.toJson());
+
+                        try (MongoCursor<Document> cursor = expandCollection.find(expandQuery)
+                                .maxTime(5000, TimeUnit.MILLISECONDS)
+                                .iterator()) {
+                            while (cursor.hasNext()) {
+                                Document expandDoc = cursor.next();
+                                LOG.debug("Found {} document: {}", navigationName, expandDoc.toJson());
+                                Entity expandEntity = CommonDataProcessing.getEntityFromDocument(expandDoc,
+                                        resourceLookup.get(navigationName));
+                                expandEntities.getEntities().add(expandEntity);
+                            }
+                        }
+
+                        Link link = new Link();
+                        link.setTitle(navigationName);
+                        link.setType(Constants.ENTITY_NAVIGATION_LINK_TYPE);
+                        if (expandEntities.getEntities().size() > 0) {
+                            link.setInlineEntitySet(expandEntities);
+                            LOG.info("Set {} entities for property {}",
+                                    expandEntities.getEntities().size(), resourceRecordKey);
+                        } else {
+                            LOG.warn("No {} entities found for property {}", navigationName, resourceRecordKey);
+                        }
+                        product.getNavigationLinks().add(link);
+                    }
                 }
             } else {
                 LOG.info("No document found for query: {}", query.toJson());
@@ -308,127 +395,6 @@ public class GenericEntityProcessor implements EntityProcessor {
         }
 
         return product;
-    }
-
-    private void handleMongoExpand(Entity sourceEntity, ResourceInfo sourceResource, String sourceKey,
-            ExpandOption expandOption) {
-        if (mongoClient == null) {
-            LOG.error("MongoDB client is not initialized");
-            return;
-        }
-
-        LOG.info("=== Starting MongoDB Expand ===");
-        LOG.info("Source Entity Key: {}", sourceKey);
-        LOG.info("Source Resource Name: {}", sourceResource.getResourceName());
-        LOG.info("Source Resource Table Name: {}", sourceResource.getTableName());
-
-        try {
-            // Use the local MongoDB instance
-            MongoDatabase database = mongoClient.getDatabase("reso");
-            LOG.info("Connected to local MongoDB database: {}", database.getName());
-
-            for (ExpandItem expandItem : expandOption.getExpandItems()) {
-                UriResource expandPath = expandItem.getResourcePath().getUriResourceParts().get(0);
-                if (expandPath instanceof UriResourceNavigation) {
-                    UriResourceNavigation expandNavigation = (UriResourceNavigation) expandPath;
-                    EdmNavigationProperty edmNavigationProperty = expandNavigation.getProperty();
-                    String expandResourceName = edmNavigationProperty.getType().getName();
-                    ResourceInfo expandResource = resourceLookup.get(expandResourceName);
-
-                    LOG.info("=== Expand Navigation Details ===");
-                    LOG.info("Expand Resource Name: {}", expandResourceName);
-                    LOG.info("Navigation Property Name: {}", edmNavigationProperty.getName());
-                    LOG.info("Is Collection: {}", edmNavigationProperty.isCollection());
-
-                    if (expandResource != null) {
-                        LOG.info("Found expand resource. Table name: {}", expandResource.getTableName());
-                        try {
-                            Document query = new Document();
-                            if (edmNavigationProperty.isCollection()) {
-                                switch (expandResource.getResourceName()) {
-                                    case "Media":
-                                    case "Queue":
-                                    case "OtherPhone":
-                                    case "SocialMedia":
-                                    case "HistoryTransactional":
-                                        query.append("ResourceName", sourceResource.getResourceName())
-                                                .append("ResourceRecordKey", sourceKey);
-                                        LOG.info("=== Media Query Details ===");
-                                        LOG.info("Collection name being queried: {}",
-                                                expandResource.getTableName().toLowerCase());
-                                        LOG.info("Full query document: {}", query.toJson());
-                                        LOG.info("ResourceName in query: {}", sourceResource.getResourceName());
-                                        LOG.info("ResourceRecordKey in query: {}", sourceKey);
-                                        break;
-                                    default:
-                                        query.append(sourceResource.getPrimaryKeyName(), sourceKey);
-                                        LOG.info("Default query constructed: {}", query.toJson());
-                                }
-                            } else {
-                                Property expandResourceKey = sourceEntity
-                                        .getProperty(edmNavigationProperty.getName() + "Key");
-                                if (expandResourceKey != null && expandResourceKey.getValue() != null) {
-                                    query.append(expandResource.getPrimaryKeyName(),
-                                            expandResourceKey.getValue().toString());
-                                }
-                            }
-
-                            EntityCollection expandEntities = new EntityCollection();
-                            String collectionName = expandResource.getTableName().toLowerCase();
-                            MongoCollection<Document> collection = database.getCollection(collectionName);
-
-                            // Check if collection exists and has documents
-                            LOG.info("=== Collection Status ===");
-                            LOG.info("Collection exists: {}", collection != null);
-                            long totalCount = collection.countDocuments();
-                            LOG.info("Total documents in collection {}: {}", collectionName, totalCount);
-
-                            // Execute the query with timeout
-                            try (MongoCursor<Document> cursor = collection.find(query)
-                                    .maxTime(5000, TimeUnit.MILLISECONDS)
-                                    .iterator()) {
-
-                                int count = 0;
-                                while (cursor.hasNext()) {
-                                    Document doc = cursor.next();
-                                    LOG.info("Found document: {}", doc.toJson());
-                                    Entity expandEntity = CommonDataProcessing.getEntityFromDocument(doc,
-                                            expandResource);
-                                    expandEntities.getEntities().add(expandEntity);
-                                    count++;
-                                }
-                                LOG.info("Found {} documents matching query", count);
-
-                                if (count == 0) {
-                                    // Log a sample document if no matches found
-                                    Document sampleDoc = collection.find().first();
-                                    if (sampleDoc != null) {
-                                        LOG.info("Sample document from collection: {}", sampleDoc.toJson());
-                                    }
-                                }
-                            }
-
-                            Link link = new Link();
-                            link.setTitle(edmNavigationProperty.getName());
-                            link.setType(Constants.ENTITY_NAVIGATION_LINK_TYPE);
-                            link.setInlineEntitySet(expandEntities);
-                            sourceEntity.getNavigationLinks().add(link);
-                            LOG.info("Added {} entities to navigation link {}", expandEntities.getEntities().size(),
-                                    edmNavigationProperty.getName());
-
-                        } catch (Exception e) {
-                            LOG.error("Error executing MongoDB query: " + e.getMessage(), e);
-                            e.printStackTrace();
-                        }
-                    } else {
-                        LOG.error("Could not find resource info for {}", expandResourceName);
-                    }
-                }
-            }
-        } catch (Exception e) {
-            LOG.error("Error in handleMongoExpand: " + e.getMessage(), e);
-            e.printStackTrace();
-        }
     }
 
     private Entity getDataFromSQL(ResourceInfo resource, List<UriParameter> keyPredicates, UriInfo uriInfo) {
