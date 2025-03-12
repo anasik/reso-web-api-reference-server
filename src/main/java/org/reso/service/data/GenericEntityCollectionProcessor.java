@@ -63,51 +63,363 @@ public class GenericEntityCollectionProcessor implements EntityCollectionProcess
    private static final int PAGE_SIZE = 100;
    private static final Map<String, NavigationConfig> NAVIGATION_CONFIGS = new HashMap<>();
 
+   private enum ResourceType {
+      PROPERTY("Property"),
+      MEMBER("Member"),
+      OFFICE("Office"),
+      CONTACTS("Contacts"),
+      TEAMS("Teams"),
+      SHOWING("Showing");
+
+      private final String value;
+
+      ResourceType(String value) {
+         this.value = value;
+      }
+
+      public String getValue() {
+         return value;
+      }
+   }
+
+   private enum CollectionType {
+      MEMBER("member", "Member"),
+      OFFICE("office", "Office"),
+      MEDIA("media", "Media"),
+      SOCIAL_MEDIA("socialmedia", "SocialMedia"),
+      HISTORY_TRANSACTIONAL("historytransactional", "HistoryTransactional"),
+      GREEN_VERIFICATION("propertygreenverification", "GreenBuildingVerification"),
+      ROOMS("propertyrooms", "Rooms"),
+      UNIT_TYPES("propertyunittypes", "UnitTypes"),
+      POWER_PRODUCTION("propertypowerproduction", "PowerProduction"),
+      OPEN_HOUSE("openhouse", "OpenHouse"),
+      TEAMS("teams", "Teams"),
+      OUID("ouid", "OUID"),
+      PROPERTY("property", "Property"),
+      OTHER_PHONE("other_phone", "OtherPhone");
+
+      private final String collectionName;
+      private final String resourceName;
+
+      CollectionType(String collectionName, String resourceName) {
+         this.collectionName = collectionName;
+         this.resourceName = resourceName;
+      }
+
+      public String getCollectionName() {
+         return collectionName;
+      }
+
+      public String getResourceName() {
+         return resourceName;
+      }
+   }
+
+   private static class NavigationBuilder {
+      private final ResourceType sourceResource;
+      private final String navProperty;
+      private final CollectionType targetCollection;
+      private String sourceKey;
+      private String targetKey;
+      private boolean isCollection;
+
+      private NavigationBuilder(ResourceType sourceResource, String navProperty, CollectionType targetCollection) {
+         this.sourceResource = sourceResource;
+         this.navProperty = navProperty;
+         this.targetCollection = targetCollection;
+      }
+
+      public static NavigationBuilder from(ResourceType sourceResource, String navProperty,
+            CollectionType targetCollection) {
+         return new NavigationBuilder(sourceResource, navProperty, targetCollection);
+      }
+
+      public NavigationBuilder withKeys(String sourceKey, String targetKey) {
+         this.sourceKey = sourceKey;
+         this.targetKey = targetKey;
+         return this;
+      }
+
+      public NavigationBuilder asCollection(boolean isCollection) {
+         this.isCollection = isCollection;
+         return this;
+      }
+
+      public void add() {
+         addNavConfig(
+               sourceResource.getValue(),
+               navProperty,
+               targetCollection.getCollectionName(),
+               sourceKey,
+               targetKey,
+               isCollection);
+      }
+   }
+
+   private static class ResourceMapping {
+      private static final Map<String, String> COLLECTION_TO_RESOURCE = new HashMap<>();
+
+      static {
+         for (CollectionType type : CollectionType.values()) {
+            COLLECTION_TO_RESOURCE.put(type.getCollectionName(), type.getResourceName());
+         }
+      }
+
+      static String getResourceName(String collection, String navPropertyName) {
+         return COLLECTION_TO_RESOURCE.getOrDefault(collection, navPropertyName);
+      }
+   }
+
    static {
-      // Property navigation properties
-      addNavConfig("Property", "BuyerAgent", "member", "BuyerAgentKey", "MemberKey", false);
-      addNavConfig("Property", "BuyerOffice", "office", "BuyerOfficeKey", "OfficeKey", false);
-      addNavConfig("Property", "BuyerTeam", "teams", "BuyerTeamKey", "TeamKey", false);
-      addNavConfig("Property", "CoBuyerAgent", "member", "CoBuyerAgentKey", "MemberKey", false);
-      addNavConfig("Property", "CoBuyerOffice", "office", "CoBuyerOfficeKey", "OfficeKey", false);
-      addNavConfig("Property", "CoListAgent", "member", "CoListAgentKey", "MemberKey", false);
-      addNavConfig("Property", "CoListOffice", "office", "CoListOfficeKey", "OfficeKey", false);
-      addNavConfig("Property", "ListAgent", "member", "ListAgentKey", "MemberKey", false);
-      addNavConfig("Property", "ListOffice", "office", "ListOfficeKey", "OfficeKey", false);
-      addNavConfig("Property", "ListTeam", "teams", "ListTeamKey", "TeamKey", false);
+      initializePropertyNavigations();
+      initializeMemberNavigations();
+      initializeOfficeNavigations();
+      initializeContactNavigations();
+      initializeTeamNavigations();
+      initializeShowingNavigations();
+   }
 
-      // Resource record based navigation properties
-      addNavConfig("Property", "Media", "media", "ResourceRecordKey,ResourceName", null, true);
-      addNavConfig("Property", "SocialMedia", "socialmedia", "ResourceRecordKey,ResourceName", null, true);
-      addNavConfig("Property", "HistoryTransactional", "historytransactional", "ResourceRecordKey,ResourceName", null,
-            true);
+   private static void initializePropertyNavigations() {
+      // Agent related navigations
+      NavigationBuilder.from(ResourceType.PROPERTY, "BuyerAgent", CollectionType.MEMBER)
+            .withKeys("BuyerAgentKey", "MemberKey")
+            .asCollection(false)
+            .add();
 
-      // ListingKey based navigation properties
-      addNavConfig("Property", "GreenBuildingVerification", "propertygreenverification", "ListingKey", "ListingKey",
-            true);
-      addNavConfig("Property", "OpenHouse", "openhouse", "ListingKey", "ListingKey", true);
-      addNavConfig("Property", "PowerProduction", "propertypowerproduction", "ListingKey", "ListingKey", true);
-      addNavConfig("Property", "Rooms", "propertyrooms", "ListingKey", "ListingKey", true);
-      addNavConfig("Property", "UnitTypes", "propertyunittypes", "ListingKey", "ListingKey", true);
+      NavigationBuilder.from(ResourceType.PROPERTY, "CoBuyerAgent", CollectionType.MEMBER)
+            .withKeys("CoBuyerAgentKey", "MemberKey")
+            .asCollection(false)
+            .add();
 
-      // OUID navigation properties
-      addNavConfig("Property", "OriginatingSystem", "ouid", "OriginatingSystemID", "OrganizationUniqueId", false);
-      addNavConfig("Property", "SourceSystem", "ouid", "SourceSystemID", "OrganizationUniqueId", false);
+      NavigationBuilder.from(ResourceType.PROPERTY, "CoListAgent", CollectionType.MEMBER)
+            .withKeys("CoListAgentKey", "MemberKey")
+            .asCollection(false)
+            .add();
 
-      // Add more configurations for other resources...
-      // Member navigation properties
-      addNavConfig("Member", "Office", "office", "OfficeKey", "OfficeKey", false);
-      addNavConfig("Member", "Media", "media", "ResourceRecordKey,ResourceName", null, true);
-      addNavConfig("Member", "MemberSocialMedia", "socialmedia", "ResourceRecordKey,ResourceName", null, true);
-      addNavConfig("Member", "HistoryTransactional", "historytransactional", "ResourceRecordKey,ResourceName", null,
-            true);
+      NavigationBuilder.from(ResourceType.PROPERTY, "ListAgent", CollectionType.MEMBER)
+            .withKeys("ListAgentKey", "MemberKey")
+            .asCollection(false)
+            .add();
 
-      // Office navigation properties
-      addNavConfig("Office", "MainOffice", "office", "MainOfficeKey", "OfficeKey", false);
-      addNavConfig("Office", "OfficeBroker", "member", "OfficeBrokerKey", "MemberKey", false);
-      addNavConfig("Office", "OfficeManager", "member", "OfficeManagerKey", "MemberKey", false);
-      addNavConfig("Office", "Listings", "property", "OfficeKey", "ListOfficeKey", true);
-      addNavConfig("Office", "Agents", "member", "OfficeKey", "OfficeKey", true);
+      // Office related navigations
+      NavigationBuilder.from(ResourceType.PROPERTY, "BuyerOffice", CollectionType.OFFICE)
+            .withKeys("BuyerOfficeKey", "OfficeKey")
+            .asCollection(false)
+            .add();
+
+      NavigationBuilder.from(ResourceType.PROPERTY, "CoBuyerOffice", CollectionType.OFFICE)
+            .withKeys("CoBuyerOfficeKey", "OfficeKey")
+            .asCollection(false)
+            .add();
+
+      NavigationBuilder.from(ResourceType.PROPERTY, "CoListOffice", CollectionType.OFFICE)
+            .withKeys("CoListOfficeKey", "OfficeKey")
+            .asCollection(false)
+            .add();
+
+      NavigationBuilder.from(ResourceType.PROPERTY, "ListOffice", CollectionType.OFFICE)
+            .withKeys("ListOfficeKey", "OfficeKey")
+            .asCollection(false)
+            .add();
+
+      // Team related navigations
+      NavigationBuilder.from(ResourceType.PROPERTY, "BuyerTeam", CollectionType.TEAMS)
+            .withKeys("BuyerTeamKey", "TeamKey")
+            .asCollection(false)
+            .add();
+
+      NavigationBuilder.from(ResourceType.PROPERTY, "ListTeam", CollectionType.TEAMS)
+            .withKeys("ListTeamKey", "TeamKey")
+            .asCollection(false)
+            .add();
+
+      // Resource record based navigations
+      String resourceRecordKey = "ResourceRecordKey,ResourceName";
+      NavigationBuilder.from(ResourceType.PROPERTY, "Media", CollectionType.MEDIA)
+            .withKeys(resourceRecordKey, null)
+            .asCollection(true)
+            .add();
+
+      NavigationBuilder.from(ResourceType.PROPERTY, "SocialMedia", CollectionType.SOCIAL_MEDIA)
+            .withKeys(resourceRecordKey, null)
+            .asCollection(true)
+            .add();
+
+      NavigationBuilder.from(ResourceType.PROPERTY, "HistoryTransactional", CollectionType.HISTORY_TRANSACTIONAL)
+            .withKeys(resourceRecordKey, null)
+            .asCollection(true)
+            .add();
+
+      // ListingKey based navigations
+      String listingKey = "ListingKey";
+      NavigationBuilder.from(ResourceType.PROPERTY, "GreenBuildingVerification", CollectionType.GREEN_VERIFICATION)
+            .withKeys(listingKey, listingKey)
+            .asCollection(true)
+            .add();
+
+      NavigationBuilder.from(ResourceType.PROPERTY, "OpenHouse", CollectionType.OPEN_HOUSE)
+            .withKeys(listingKey, listingKey)
+            .asCollection(true)
+            .add();
+
+      NavigationBuilder.from(ResourceType.PROPERTY, "PowerProduction", CollectionType.POWER_PRODUCTION)
+            .withKeys(listingKey, listingKey)
+            .asCollection(true)
+            .add();
+
+      NavigationBuilder.from(ResourceType.PROPERTY, "Rooms", CollectionType.ROOMS)
+            .withKeys(listingKey, listingKey)
+            .asCollection(true)
+            .add();
+
+      NavigationBuilder.from(ResourceType.PROPERTY, "UnitTypes", CollectionType.UNIT_TYPES)
+            .withKeys(listingKey, listingKey)
+            .asCollection(true)
+            .add();
+
+      // OUID navigations
+      NavigationBuilder.from(ResourceType.PROPERTY, "OriginatingSystem", CollectionType.OUID)
+            .withKeys("OriginatingSystemID", "OrganizationUniqueId")
+            .asCollection(false)
+            .add();
+
+      NavigationBuilder.from(ResourceType.PROPERTY, "SourceSystem", CollectionType.OUID)
+            .withKeys("SourceSystemID", "OrganizationUniqueId")
+            .asCollection(false)
+            .add();
+   }
+
+   private static void initializeMemberNavigations() {
+      String resourceRecordKey = "ResourceRecordKey,ResourceName";
+
+      NavigationBuilder.from(ResourceType.MEMBER, "Office", CollectionType.OFFICE)
+            .withKeys("OfficeKey", "OfficeKey")
+            .asCollection(false)
+            .add();
+
+      NavigationBuilder.from(ResourceType.MEMBER, "Media", CollectionType.MEDIA)
+            .withKeys(resourceRecordKey, null)
+            .asCollection(true)
+            .add();
+
+      NavigationBuilder.from(ResourceType.MEMBER, "MemberSocialMedia", CollectionType.SOCIAL_MEDIA)
+            .withKeys(resourceRecordKey, null)
+            .asCollection(true)
+            .add();
+
+      NavigationBuilder.from(ResourceType.MEMBER, "HistoryTransactional", CollectionType.HISTORY_TRANSACTIONAL)
+            .withKeys(resourceRecordKey, null)
+            .asCollection(true)
+            .add();
+
+      NavigationBuilder.from(ResourceType.MEMBER, "Listings", CollectionType.PROPERTY)
+            .withKeys("MemberKey", "ListAgentKey")
+            .asCollection(true)
+            .add();
+   }
+
+   private static void initializeOfficeNavigations() {
+      NavigationBuilder.from(ResourceType.OFFICE, "MainOffice", CollectionType.OFFICE)
+            .withKeys("MainOfficeKey", "OfficeKey")
+            .asCollection(false)
+            .add();
+
+      NavigationBuilder.from(ResourceType.OFFICE, "OfficeBroker", CollectionType.MEMBER)
+            .withKeys("OfficeBrokerKey", "MemberKey")
+            .asCollection(false)
+            .add();
+
+      NavigationBuilder.from(ResourceType.OFFICE, "OfficeManager", CollectionType.MEMBER)
+            .withKeys("OfficeManagerKey", "MemberKey")
+            .asCollection(false)
+            .add();
+
+      NavigationBuilder.from(ResourceType.OFFICE, "Listings", CollectionType.PROPERTY)
+            .withKeys("OfficeKey", "ListOfficeKey")
+            .asCollection(true)
+            .add();
+
+      NavigationBuilder.from(ResourceType.OFFICE, "Agents", CollectionType.MEMBER)
+            .withKeys("OfficeKey", "OfficeKey")
+            .asCollection(true)
+            .add();
+   }
+
+   private static void initializeContactNavigations() {
+      String resourceRecordKey = "ResourceRecordKey,ResourceName";
+
+      NavigationBuilder.from(ResourceType.CONTACTS, "ContactsOtherPhone", CollectionType.OTHER_PHONE)
+            .withKeys(resourceRecordKey, null)
+            .asCollection(true)
+            .add();
+
+      NavigationBuilder.from(ResourceType.CONTACTS, "ContactsSocialMedia", CollectionType.SOCIAL_MEDIA)
+            .withKeys(resourceRecordKey, null)
+            .asCollection(true)
+            .add();
+
+      NavigationBuilder.from(ResourceType.CONTACTS, "HistoryTransactional", CollectionType.HISTORY_TRANSACTIONAL)
+            .withKeys(resourceRecordKey, null)
+            .asCollection(true)
+            .add();
+
+      NavigationBuilder.from(ResourceType.CONTACTS, "Media", CollectionType.MEDIA)
+            .withKeys(resourceRecordKey, null)
+            .asCollection(true)
+            .add();
+
+      NavigationBuilder.from(ResourceType.CONTACTS, "OwnerMember", CollectionType.MEMBER)
+            .withKeys("OwnerMemberKey", "MemberKey")
+            .asCollection(false)
+            .add();
+   }
+
+   private static void initializeTeamNavigations() {
+      String resourceRecordKey = "ResourceRecordKey,ResourceName";
+
+      NavigationBuilder.from(ResourceType.TEAMS, "TeamLead", CollectionType.MEMBER)
+            .withKeys("TeamLeadKey", "MemberKey")
+            .asCollection(false)
+            .add();
+
+      NavigationBuilder.from(ResourceType.TEAMS, "Media", CollectionType.MEDIA)
+            .withKeys(resourceRecordKey, null)
+            .asCollection(true)
+            .add();
+
+      NavigationBuilder.from(ResourceType.TEAMS, "TeamsSocialMedia", CollectionType.SOCIAL_MEDIA)
+            .withKeys(resourceRecordKey, null)
+            .asCollection(true)
+            .add();
+
+      NavigationBuilder.from(ResourceType.TEAMS, "HistoryTransactional", CollectionType.HISTORY_TRANSACTIONAL)
+            .withKeys(resourceRecordKey, null)
+            .asCollection(true)
+            .add();
+   }
+
+   private static void initializeShowingNavigations() {
+      String resourceRecordKey = "ResourceRecordKey,ResourceName";
+
+      NavigationBuilder.from(ResourceType.SHOWING, "ShowingAgent", CollectionType.MEMBER)
+            .withKeys("ShowingAgentKey", "MemberKey")
+            .asCollection(false)
+            .add();
+
+      NavigationBuilder.from(ResourceType.SHOWING, "Listing", CollectionType.PROPERTY)
+            .withKeys("ListingKey", "ListingKey")
+            .asCollection(false)
+            .add();
+
+      NavigationBuilder.from(ResourceType.SHOWING, "Media", CollectionType.MEDIA)
+            .withKeys(resourceRecordKey, null)
+            .asCollection(true)
+            .add();
+
+      NavigationBuilder.from(ResourceType.SHOWING, "SocialMedia", CollectionType.SOCIAL_MEDIA)
+            .withKeys(resourceRecordKey, null)
+            .asCollection(true)
+            .add();
    }
 
    private static void addNavConfig(String sourceResource, String navProperty, String targetCollection,
@@ -352,105 +664,119 @@ public class GenericEntityCollectionProcessor implements EntityCollectionProcess
 
          for (Entity sourceEntity : sourceCollection.getEntities()) {
             for (ExpandItem expandItem : expandOption.getExpandItems()) {
-               UriResource expandPath = expandItem.getResourcePath().getUriResourceParts().get(0);
-               if (!(expandPath instanceof UriResourceNavigation)) {
-                  continue;
-               }
-
-               UriResourceNavigation expandNavigation = (UriResourceNavigation) expandPath;
-               String navPropertyName = expandNavigation.getProperty().getName();
-               String configKey = sourceResource.getResourceName() + "." + navPropertyName;
-
-               NavigationConfig config = NAVIGATION_CONFIGS.get(configKey);
-               if (config == null) {
-                  LOG.warn("Unsupported navigation property: {}", navPropertyName);
-                  continue;
-               }
-
-               Document query = new Document();
-               if (config.sourceKey.contains(",")) {
-                  // Handle composite keys (ResourceRecordKey,ResourceName)
-                  String[] keys = config.sourceKey.split(",");
-                  if (keys[0].equals("ResourceRecordKey")) {
-                     Property keyProp = sourceEntity.getProperty(sourceResource.getPrimaryKeyName());
-                     if (keyProp != null && keyProp.getValue() != null) {
-                        query.append("ResourceRecordKey", keyProp.getValue().toString());
-                        query.append("ResourceName", sourceResource.getResourceName());
-                     }
-                  }
-               } else {
-                  // Handle single key relationship
-                  Property sourceProp = sourceEntity.getProperty(config.sourceKey);
-                  if (sourceProp != null && sourceProp.getValue() != null) {
-                     String keyValue = sourceProp.getValue().toString();
-                     if (config.targetKey != null) {
-                        query.append(config.targetKey, keyValue);
-                     } else {
-                        query.append(config.sourceKey, keyValue);
-                     }
-                  }
-               }
-
-               if (query.isEmpty()) {
-                  LOG.warn("No key found for navigation property: {}", navPropertyName);
-                  continue;
-               }
-
-               LOG.info("Querying {} with filter: {}", config.targetCollection, query.toJson());
-               MongoCollection<Document> collection = database.getCollection(config.targetCollection);
-               EntityCollection expandEntities = new EntityCollection();
-
-               try (MongoCursor<Document> cursor = collection.find(query)
-                     .maxTime(5000, TimeUnit.MILLISECONDS)
-                     .iterator()) {
-                  while (cursor.hasNext()) {
-                     Document doc = cursor.next();
-                     LOG.info("Found {} document: {}", navPropertyName, doc.toJson());
-
-                     // Determine the actual resource name based on the collection
-                     String resourceName = config.targetCollection;
-                     if (config.targetCollection.equals("member")) {
-                        resourceName = "Member";
-                     } else if (config.targetCollection.equals("office")) {
-                        resourceName = "Office";
-                     } else {
-                        resourceName = navPropertyName;
-                     }
-
-                     ResourceInfo expandResource = resourceLookup.get(resourceName);
-                     if (expandResource == null) {
-                        LOG.error("Resource not found for expansion: {} (looking up as {})", navPropertyName,
-                              resourceName);
-                        continue;
-                     }
-                     Entity expandEntity = CommonDataProcessing.getEntityFromDocument(doc, expandResource);
-                     expandEntities.getEntities().add(expandEntity);
-                  }
-               }
-
-               Link link = new Link();
-               link.setTitle(navPropertyName);
-               link.setType(Constants.ENTITY_NAVIGATION_LINK_TYPE);
-
-               if (!expandEntities.getEntities().isEmpty()) {
-                  if (config.isCollection) {
-                     link.setInlineEntitySet(expandEntities);
-                     LOG.info("Added {} {} items to entity",
-                           expandEntities.getEntities().size(), navPropertyName);
-                  } else {
-                     link.setInlineEntity(expandEntities.getEntities().get(0));
-                     LOG.info("Added {} entity", navPropertyName);
-                  }
-               } else {
-                  LOG.warn("No {} entities found", navPropertyName);
-               }
-
-               sourceEntity.getNavigationLinks().add(link);
+               handleExpandItem(database, sourceEntity, sourceResource, expandItem);
             }
          }
       } catch (Exception e) {
          LOG.error("Error in handleMongoExpand: {}", e.getMessage(), e);
       }
+   }
+
+   private void handleExpandItem(MongoDatabase database, Entity sourceEntity, ResourceInfo sourceResource,
+         ExpandItem expandItem) {
+      UriResource expandPath = expandItem.getResourcePath().getUriResourceParts().get(0);
+      if (!(expandPath instanceof UriResourceNavigation)) {
+         return;
+      }
+
+      UriResourceNavigation expandNavigation = (UriResourceNavigation) expandPath;
+      String navPropertyName = expandNavigation.getProperty().getName();
+      String configKey = sourceResource.getResourceName() + "." + navPropertyName;
+
+      NavigationConfig config = NAVIGATION_CONFIGS.get(configKey);
+      if (config == null) {
+         LOG.warn("Unsupported navigation property: {}", navPropertyName);
+         return;
+      }
+
+      Document query = buildNavigationQuery(sourceEntity, sourceResource, config);
+      if (query.isEmpty()) {
+         LOG.warn("No key found for navigation property: {}", navPropertyName);
+         return;
+      }
+
+      EntityCollection expandEntities = executeNavigationQuery(database, config, query, navPropertyName);
+      addNavigationLink(sourceEntity, navPropertyName, expandEntities, config.isCollection);
+   }
+
+   private Document buildNavigationQuery(Entity sourceEntity, ResourceInfo sourceResource, NavigationConfig config) {
+      Document query = new Document();
+
+      if (config.sourceKey.contains(",")) {
+         handleCompositeKey(query, sourceEntity, sourceResource);
+      } else {
+         handleSingleKey(query, sourceEntity, config);
+      }
+
+      return query;
+   }
+
+   private void handleCompositeKey(Document query, Entity sourceEntity, ResourceInfo sourceResource) {
+      Property keyProp = sourceEntity.getProperty(sourceResource.getPrimaryKeyName());
+      if (keyProp != null && keyProp.getValue() != null) {
+         query.append("ResourceRecordKey", keyProp.getValue().toString());
+         query.append("ResourceName", sourceResource.getResourceName());
+      }
+   }
+
+   private void handleSingleKey(Document query, Entity sourceEntity, NavigationConfig config) {
+      Property sourceProp = sourceEntity.getProperty(config.sourceKey);
+      if (sourceProp != null && sourceProp.getValue() != null) {
+         String keyValue = sourceProp.getValue().toString();
+         if (config.targetKey != null) {
+            query.append(config.targetKey, keyValue);
+         } else {
+            query.append(config.sourceKey, keyValue);
+         }
+      }
+   }
+
+   private EntityCollection executeNavigationQuery(MongoDatabase database, NavigationConfig config,
+         Document query, String navPropertyName) {
+      LOG.info("Querying {} with filter: {}", config.targetCollection, query.toJson());
+      MongoCollection<Document> collection = database.getCollection(config.targetCollection);
+      EntityCollection expandEntities = new EntityCollection();
+
+      try (MongoCursor<Document> cursor = collection.find(query).maxTime(5000, TimeUnit.MILLISECONDS).iterator()) {
+         while (cursor.hasNext()) {
+            Document doc = cursor.next();
+            LOG.info("Found {} document: {}", navPropertyName, doc.toJson());
+
+            String resourceName = ResourceMapping.getResourceName(config.targetCollection, navPropertyName);
+            ResourceInfo expandResource = resourceLookup.get(resourceName);
+
+            if (expandResource == null) {
+               LOG.error("Resource not found for expansion: {} (looking up as {})", navPropertyName, resourceName);
+               continue;
+            }
+
+            Entity expandEntity = CommonDataProcessing.getEntityFromDocument(doc, expandResource);
+            expandEntities.getEntities().add(expandEntity);
+         }
+      }
+
+      return expandEntities;
+   }
+
+   private void addNavigationLink(Entity sourceEntity, String navPropertyName,
+         EntityCollection expandEntities, boolean isCollection) {
+      Link link = new Link();
+      link.setTitle(navPropertyName);
+      link.setType(Constants.ENTITY_NAVIGATION_LINK_TYPE);
+
+      if (!expandEntities.getEntities().isEmpty()) {
+         if (isCollection) {
+            link.setInlineEntitySet(expandEntities);
+            LOG.info("Added {} {} items to entity", expandEntities.getEntities().size(), navPropertyName);
+         } else {
+            link.setInlineEntity(expandEntities.getEntities().get(0));
+            LOG.info("Added {} entity", navPropertyName);
+         }
+      } else {
+         LOG.warn("No {} entities found", navPropertyName);
+      }
+
+      sourceEntity.getNavigationLinks().add(link);
    }
 
    protected EntityCollection getDataFromSQL(EdmEntitySet edmEntitySet, UriInfo uriInfo, boolean isCount,
