@@ -20,7 +20,7 @@ import org.apache.olingo.server.api.uri.queryoption.expression.Member;
 import org.bson.Document;
 import org.bson.conversions.Bson;
 import org.reso.service.data.common.CommonDataProcessing;
-import org.reso.service.data.helper.ExpandHelper;
+import org.reso.service.data.helper.ExpandUtils;
 import org.reso.service.data.meta.FieldInfo;
 import org.reso.service.data.meta.MongoDBFilterExpressionVisitor;
 import org.reso.service.data.meta.ResourceInfo;
@@ -47,6 +47,7 @@ public class GenericEntityCollectionProcessor implements EntityCollectionProcess
    private final MongoClient mongoClient;
    private Connection connect;
    private String dbType;
+   private ExpandUtils expandUtils;
    HashMap<String, ResourceInfo> resourceList = null;
    private static final Logger LOG = LoggerFactory.getLogger(GenericEntityCollectionProcessor.class);
    private static final int PAGE_SIZE = 100;
@@ -64,12 +65,16 @@ public class GenericEntityCollectionProcessor implements EntityCollectionProcess
       } catch (SQLException e) {
          LOG.error("Failed to establish database connection", e);
       }
+      this.expandUtils = new ExpandUtils(mongoClient);
       this.resourceList = new HashMap<>();
    }
 
+   @Override
    public void init(OData odata, ServiceMetadata serviceMetadata) {
       this.odata = odata;
       this.serviceMetadata = serviceMetadata;
+      // Log all navigation configurations at startup
+      expandUtils.logNavigationConfigurations();
    }
 
    public void addResource(ResourceInfo resource, String name) {
@@ -249,8 +254,7 @@ public class GenericEntityCollectionProcessor implements EntityCollectionProcess
          // Handle $expand if present
          ExpandOption expandOption = uriInfo.getExpandOption();
          if (expandOption != null && !dataCollection.getEntities().isEmpty()) {
-            ExpandHelper expandHelper = new ExpandHelper(mongoClient);
-            expandHelper.handleMongoExpand(dataCollection, resource, expandOption);
+            expandUtils.handleMongoExpand(dataCollection, resource, expandOption);
          }
       } catch (Exception e) {
          LOG.error("Error executing MongoDB query: {}", e.getMessage(), e);

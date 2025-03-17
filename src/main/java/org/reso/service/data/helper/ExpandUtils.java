@@ -26,12 +26,12 @@ import java.util.*;
 import java.util.concurrent.TimeUnit;
 import static org.reso.service.servlet.RESOservlet.resourceLookup;
 
-public class ExpandHelper {
+public class ExpandUtils {
    private MongoClient mongoClient;
-   private static final Logger LOG = LoggerFactory.getLogger(ExpandHelper.class);
+   private static final Logger LOG = LoggerFactory.getLogger(ExpandUtils.class);
    private static final Map<String, NavigationConfig> NAVIGATION_CONFIGS = new HashMap<>();
 
-   public ExpandHelper(MongoClient mongoClient) {
+   public ExpandUtils(MongoClient mongoClient) {
       this.mongoClient = mongoClient;
    }
 
@@ -70,11 +70,11 @@ public class ExpandHelper {
 
       public static ResourceType fromValue(String value) {
          return Arrays.stream(values())
-                      .filter(rt -> rt.value.equalsIgnoreCase(value))
-                      .findFirst()
-                      .orElse(null);
-     }
-     
+               .filter(rt -> rt.value.equalsIgnoreCase(value))
+               .findFirst()
+               .orElse(null);
+      }
+
    }
 
    private enum CollectionType {
@@ -113,9 +113,9 @@ public class ExpandHelper {
 
       public static CollectionType fromValue(String value) {
          return Arrays.stream(values())
-         .filter(ct -> ct.resourceName.equalsIgnoreCase(value) || ct.collectionName.equalsIgnoreCase(value))
-         .findFirst()
-         .orElse(null);
+               .filter(ct -> ct.resourceName.equalsIgnoreCase(value) || ct.collectionName.equalsIgnoreCase(value))
+               .findFirst()
+               .orElse(null);
       }
    }
 
@@ -126,11 +126,13 @@ public class ExpandHelper {
       private String sourceKey;
       private String targetKey;
       private boolean isCollection;
+      private long modificationTimestamp;
 
       private NavigationBuilder(ResourceType sourceResource, String navProperty, CollectionType targetCollection) {
          this.sourceResource = sourceResource;
          this.navProperty = navProperty;
          this.targetCollection = targetCollection;
+         this.modificationTimestamp = System.currentTimeMillis();
       }
 
       public static NavigationBuilder from(ResourceType sourceResource, String navProperty,
@@ -149,6 +151,11 @@ public class ExpandHelper {
          return this;
       }
 
+      public NavigationBuilder withTimestamp(long timestamp) {
+         this.modificationTimestamp = timestamp;
+         return this;
+      }
+
       public void add() {
          addNavConfig(
                sourceResource.getValue(),
@@ -156,7 +163,8 @@ public class ExpandHelper {
                targetCollection.getCollectionName(),
                sourceKey,
                targetKey,
-               isCollection);
+               isCollection,
+               modificationTimestamp);
       }
 
    }
@@ -180,7 +188,7 @@ public class ExpandHelper {
    }
 
    private static void initializeNavigations() {
-      InputStream navigationConfigStream = ExpandHelper.class.getClassLoader()
+      InputStream navigationConfigStream = ExpandUtils.class.getClassLoader()
             .getResourceAsStream("ExpandNavigationConfig.json");
       if (navigationConfigStream == null) {
          LOG.error("Config file not found.");
@@ -229,8 +237,14 @@ public class ExpandHelper {
 
    private static void addNavConfig(String sourceResource, String navProperty, String targetCollection,
          String sourceKey, String targetKey, boolean isCollection) {
+      addNavConfig(sourceResource, navProperty, targetCollection, sourceKey, targetKey, isCollection,
+            System.currentTimeMillis());
+   }
+
+   private static void addNavConfig(String sourceResource, String navProperty, String targetCollection,
+         String sourceKey, String targetKey, boolean isCollection, long modificationTimestamp) {
       NAVIGATION_CONFIGS.put(sourceResource + "." + navProperty,
-            new NavigationConfig(targetCollection, sourceKey, targetKey, isCollection));
+            new NavigationConfig(targetCollection, sourceKey, targetKey, isCollection, modificationTimestamp));
    }
 
    private static class NavigationConfig {
@@ -238,12 +252,52 @@ public class ExpandHelper {
       final String sourceKey;
       final String targetKey;
       final boolean isCollection;
+      final long modificationTimestamp;
 
       NavigationConfig(String targetCollection, String sourceKey, String targetKey, boolean isCollection) {
          this.targetCollection = targetCollection;
          this.sourceKey = sourceKey;
          this.targetKey = targetKey;
          this.isCollection = isCollection;
+         this.modificationTimestamp = System.currentTimeMillis();
+      }
+
+      NavigationConfig(String targetCollection, String sourceKey, String targetKey, boolean isCollection,
+            long modificationTimestamp) {
+         this.targetCollection = targetCollection;
+         this.sourceKey = sourceKey;
+         this.targetKey = targetKey;
+         this.isCollection = isCollection;
+         this.modificationTimestamp = modificationTimestamp;
+      }
+
+      /**
+       * Get the age of this configuration in milliseconds
+       * 
+       * @return Age in milliseconds
+       */
+      public long getAgeInMillis() {
+         return System.currentTimeMillis() - modificationTimestamp;
+      }
+
+      /**
+       * Check if this configuration is stale (older than the specified threshold)
+       * 
+       * @param thresholdMillis Age threshold in milliseconds
+       * @return true if the configuration is stale
+       */
+      public boolean isStale(long thresholdMillis) {
+         return getAgeInMillis() > thresholdMillis;
+      }
+
+      /**
+       * Get the last modification time as a formatted date string
+       * 
+       * @return Formatted date string
+       */
+      public String getFormattedModificationTime() {
+         return new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(
+               new java.util.Date(modificationTimestamp));
       }
    }
 
@@ -283,6 +337,17 @@ public class ExpandHelper {
       if (config == null) {
          LOG.warn("Unsupported navigation property: {}", navPropertyName);
          return;
+      }
+
+      // Log the age of the configuration
+      LOG.debug("Navigation config '{}' age: {} ms, last modified: {}",
+            configKey,
+            config.getAgeInMillis(),
+            config.getFormattedModificationTime());
+
+      // Example of checking if a configuration is stale (older than 24 hours)
+      if (config.isStale(24 * 60 * 60 * 1000)) {
+         LOG.warn("Navigation config '{}' is stale (older than 24 hours)", configKey);
       }
 
       Document query = buildNavigationQuery(sourceEntity, sourceResource, config);
@@ -329,7 +394,10 @@ public class ExpandHelper {
 
    private EntityCollection executeNavigationQuery(MongoDatabase database, NavigationConfig config,
          Document query, String navPropertyName) {
-      LOG.info("Querying {} with filter: {}", config.targetCollection, query.toJson());
+      LOG.info("Querying {} with filter: {} (last modified: {})",
+            config.targetCollection,
+            query.toJson(),
+            new java.util.Date(config.modificationTimestamp));
       MongoCollection<Document> collection = database.getCollection(config.targetCollection);
       EntityCollection expandEntities = new EntityCollection();
 
@@ -374,4 +442,17 @@ public class ExpandHelper {
 
       sourceEntity.getNavigationLinks().add(link);
    }
+
+   // Add a new helper method to log all navigation configurations
+   public void logNavigationConfigurations() {
+      LOG.info("Listing all navigation configurations:");
+      for (Map.Entry<String, NavigationConfig> entry : NAVIGATION_CONFIGS.entrySet()) {
+         NavigationConfig config = entry.getValue();
+         LOG.info("Configuration: {} -> {}, Last Modified: {}",
+               entry.getKey(),
+               config.targetCollection,
+               new java.util.Date(config.modificationTimestamp));
+      }
+   }
+
 }
