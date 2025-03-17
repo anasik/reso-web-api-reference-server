@@ -87,8 +87,9 @@ public class TestUtils {
         String responsePathFull = System.getProperty("user.dir")
                 + "/results/data-dictionary-"
                 + version + "/" + dynamicFolder + "/current/data-dictionary-" + version + ".json";
-        File responseFullFile = new File(responsePathFull);
 
+        File responseFullFile = new File(responsePathFull);
+        System.out.println("responseFullFile: " + responseFullFile);
         Assertions.assertTrue(responseFullFile.exists(), "Response JSON file not found!");
 
         System.out.println("Test completed for DD version " + version);

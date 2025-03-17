@@ -122,11 +122,13 @@ public class GenericEntityCollectionProcessor implements EntityCollectionProcess
       private String sourceKey;
       private String targetKey;
       private boolean isCollection;
+      private long modificationTimestamp;
 
       private NavigationBuilder(ResourceType sourceResource, String navProperty, CollectionType targetCollection) {
          this.sourceResource = sourceResource;
          this.navProperty = navProperty;
          this.targetCollection = targetCollection;
+         this.modificationTimestamp = System.currentTimeMillis();
       }
 
       public static NavigationBuilder from(ResourceType sourceResource, String navProperty,
@@ -145,6 +147,11 @@ public class GenericEntityCollectionProcessor implements EntityCollectionProcess
          return this;
       }
 
+      public NavigationBuilder withTimestamp(long timestamp) {
+         this.modificationTimestamp = timestamp;
+         return this;
+      }
+
       public void add() {
          addNavConfig(
                sourceResource.getValue(),
@@ -152,7 +159,8 @@ public class GenericEntityCollectionProcessor implements EntityCollectionProcess
                targetCollection.getCollectionName(),
                sourceKey,
                targetKey,
-               isCollection);
+               isCollection,
+               modificationTimestamp);
       }
    }
 
@@ -424,8 +432,14 @@ public class GenericEntityCollectionProcessor implements EntityCollectionProcess
 
    private static void addNavConfig(String sourceResource, String navProperty, String targetCollection,
          String sourceKey, String targetKey, boolean isCollection) {
+      addNavConfig(sourceResource, navProperty, targetCollection, sourceKey, targetKey, isCollection,
+            System.currentTimeMillis());
+   }
+
+   private static void addNavConfig(String sourceResource, String navProperty, String targetCollection,
+         String sourceKey, String targetKey, boolean isCollection, long modificationTimestamp) {
       NAVIGATION_CONFIGS.put(sourceResource + "." + navProperty,
-            new NavigationConfig(targetCollection, sourceKey, targetKey, isCollection));
+            new NavigationConfig(targetCollection, sourceKey, targetKey, isCollection, modificationTimestamp));
    }
 
    private static class NavigationConfig {
@@ -433,12 +447,52 @@ public class GenericEntityCollectionProcessor implements EntityCollectionProcess
       final String sourceKey;
       final String targetKey;
       final boolean isCollection;
+      final long modificationTimestamp;
 
       NavigationConfig(String targetCollection, String sourceKey, String targetKey, boolean isCollection) {
          this.targetCollection = targetCollection;
          this.sourceKey = sourceKey;
          this.targetKey = targetKey;
          this.isCollection = isCollection;
+         this.modificationTimestamp = System.currentTimeMillis();
+      }
+
+      NavigationConfig(String targetCollection, String sourceKey, String targetKey, boolean isCollection,
+            long modificationTimestamp) {
+         this.targetCollection = targetCollection;
+         this.sourceKey = sourceKey;
+         this.targetKey = targetKey;
+         this.isCollection = isCollection;
+         this.modificationTimestamp = modificationTimestamp;
+      }
+
+      /**
+       * Get the age of this configuration in milliseconds
+       * 
+       * @return Age in milliseconds
+       */
+      public long getAgeInMillis() {
+         return System.currentTimeMillis() - modificationTimestamp;
+      }
+
+      /**
+       * Check if this configuration is stale (older than the specified threshold)
+       * 
+       * @param thresholdMillis Age threshold in milliseconds
+       * @return true if the configuration is stale
+       */
+      public boolean isStale(long thresholdMillis) {
+         return getAgeInMillis() > thresholdMillis;
+      }
+
+      /**
+       * Get the last modification time as a formatted date string
+       * 
+       * @return Formatted date string
+       */
+      public String getFormattedModificationTime() {
+         return new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(
+               new java.util.Date(modificationTimestamp));
       }
    }
 
@@ -458,9 +512,12 @@ public class GenericEntityCollectionProcessor implements EntityCollectionProcess
       this.resourceList = new HashMap<>();
    }
 
+   @Override
    public void init(OData odata, ServiceMetadata serviceMetadata) {
       this.odata = odata;
       this.serviceMetadata = serviceMetadata;
+      // Log all navigation configurations at startup
+      logNavigationConfigurations();
    }
 
    public void addResource(ResourceInfo resource, String name) {
@@ -689,6 +746,17 @@ public class GenericEntityCollectionProcessor implements EntityCollectionProcess
          return;
       }
 
+      // Log the age of the configuration
+      LOG.debug("Navigation config '{}' age: {} ms, last modified: {}",
+            configKey,
+            config.getAgeInMillis(),
+            config.getFormattedModificationTime());
+
+      // Example of checking if a configuration is stale (older than 24 hours)
+      if (config.isStale(24 * 60 * 60 * 1000)) {
+         LOG.warn("Navigation config '{}' is stale (older than 24 hours)", configKey);
+      }
+
       Document query = buildNavigationQuery(sourceEntity, sourceResource, config);
       if (query.isEmpty()) {
          LOG.warn("No key found for navigation property: {}", navPropertyName);
@@ -733,7 +801,10 @@ public class GenericEntityCollectionProcessor implements EntityCollectionProcess
 
    private EntityCollection executeNavigationQuery(MongoDatabase database, NavigationConfig config,
          Document query, String navPropertyName) {
-      LOG.info("Querying {} with filter: {}", config.targetCollection, query.toJson());
+      LOG.info("Querying {} with filter: {} (last modified: {})",
+            config.targetCollection,
+            query.toJson(),
+            new java.util.Date(config.modificationTimestamp));
       MongoCollection<Document> collection = database.getCollection(config.targetCollection);
       EntityCollection expandEntities = new EntityCollection();
 
@@ -931,6 +1002,18 @@ public class GenericEntityCollectionProcessor implements EntityCollectionProcess
       } catch (SQLException e) {
          LOG.error("Error getting database type", e);
          return "mongodb";
+      }
+   }
+
+   // Add a new helper method to log all navigation configurations
+   private static void logNavigationConfigurations() {
+      LOG.info("Listing all navigation configurations:");
+      for (Map.Entry<String, NavigationConfig> entry : NAVIGATION_CONFIGS.entrySet()) {
+         NavigationConfig config = entry.getValue();
+         LOG.info("Configuration: {} -> {}, Last Modified: {}",
+               entry.getKey(),
+               config.targetCollection,
+               new java.util.Date(config.modificationTimestamp));
       }
    }
 

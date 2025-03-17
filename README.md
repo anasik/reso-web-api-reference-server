@@ -97,9 +97,9 @@ LOOKUP_TYPE=ENUM_COLLECTION ./gradlew test --tests org.reso.tests.LookupStringTe
 
 ##### Windows:
 ```sh
-$env:LOOKUP_TYPE="STRING"; ./gradlew test --tests org.reso.tests.LookupEnumTest
+$env:LOOKUP_TYPE="STRING"; ./gradlew test --tests org.reso.tests.LookupStringTest
 $env:LOOKUP_TYPE="ENUM_FLAGS"; ./gradlew test --tests org.reso.tests.LookupEnumFlagsTest
-$env:LOOKUP_TYPE="ENUM_COLLECTION"; ./gradlew test --tests org.reso.tests.LookupStringTest
+$env:LOOKUP_TYPE="ENUM_COLLECTION"; ./gradlew test --tests org.reso.tests.LookupEnumTest
 ```
 
 ### Debugging Issues
@@ -118,5 +118,94 @@ System.out.println("LOOKUP_TYPE: " + System.getenv("LOOKUP_TYPE"));
 - **Gradle Not Picking Up Changes?**
 ```sh
 ./gradlew clean test --rerun-tasks --info
+```
+
+# MongoDB Lookup Field Addition Scripts
+
+This repository contains scripts to add missing lookup fields to a MongoDB database for the RESO Web API reference implementation.
+
+## Available Scripts
+
+### 1. MongoDB Shell Script (`add_missing_lookups.js`)
+
+A MongoDB shell script that adds missing lookup fields directly.
+
+**Usage:**
+```
+mongo localhost:27017/reso add_missing_lookups.js
+```
+
+### 2. Python Script (`add_missing_lookups.py`)
+
+A Python implementation that provides the same functionality with interactive confirmation.
+
+**Requirements:**
+- Python 3.6+
+- PyMongo library
+
+**Installation:**
+```
+pip install pymongo
+```
+
+**Usage:**
+```
+python add_missing_lookups.py
+```
+
+### 3. Automated Python Script (`add_missing_lookups_auto.py`)
+
+A command-line version of the Python script with additional options for automation.
+
+**Usage:**
+```
+python add_missing_lookups_auto.py [options]
+```
+
+**Options:**
+- `--auto`: Run without confirmation prompts
+- `--mongo-uri URI`: Specify MongoDB connection URI (default: mongodb://localhost:27017/)
+- `--db-name NAME`: Specify database name (default: reso)
+
+Example:
+```
+python add_missing_lookups_auto.py --auto --mongo-uri mongodb://localhost:27017/ --db-name reso
+```
+
+## What These Scripts Do
+
+These scripts:
+
+1. Check for 100+ standard lookup fields specified in the RESO Data Dictionary
+2. Add missing fields with standard values (3 values per field)
+3. Skip fields that already exist in the database
+4. Generate unique hash keys for each lookup value
+5. Add proper formatting for `LegacyOdataValue` fields
+6. Include `ModificationTimestamp` with current date/time
+
+## Fields Added
+
+The scripts add standard values for common lookup fields like:
+- PropertyType, PropertySubType
+- StandardStatus, OpenHouseStatus
+- StructureType, ConstructionMaterials
+- Heating, Cooling, Appliances
+- And many more (100+ fields total)
+
+Each field gets three standard values appropriate for that field type.
+
+## Verification
+
+After running any of the scripts, you can verify the added fields with:
+
+```javascript
+// In MongoDB shell
+db.lookup.find({LookupName: "PropertyType"}).pretty()
+
+// Count by LookupName
+db.lookup.aggregate([
+  {$group: {_id: "$LookupName", count: {$sum: 1}}},
+  {$sort: {_id: 1}}
+])
 ```
 

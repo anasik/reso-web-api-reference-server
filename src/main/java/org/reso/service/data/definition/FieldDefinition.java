@@ -22,30 +22,25 @@ import java.sql.Timestamp;
 import java.text.SimpleDateFormat;
 import java.util.*;
 
-public class FieldDefinition extends ResourceInfo
-{
+public class FieldDefinition extends ResourceInfo {
    private static final String STANDARD_NAME = "RESO.OData.Metadata.StandardName";
 
    private static ArrayList<FieldInfo> fieldList = null;
    private ArrayList<ResourceInfo> resources;
 
-   public FieldDefinition()
-   {
-      this.tableName = "field";  // Never used
+   public FieldDefinition() {
+      this.tableName = "field"; // Never used
       this.resourcesName = "Field";
       this.resourceName = "Field";
       this.primaryKeyName = "FieldKey";
    }
 
-   public ArrayList<FieldInfo> getFieldList()
-   {
+   public ArrayList<FieldInfo> getFieldList() {
       return FieldDefinition.getStaticFieldList();
    }
 
-   public static ArrayList<FieldInfo> getStaticFieldList()
-   {
-      if (null!= FieldDefinition.fieldList)
-      {
+   public static ArrayList<FieldInfo> getStaticFieldList() {
+      if (null != FieldDefinition.fieldList) {
          return FieldDefinition.fieldList;
       }
 
@@ -59,32 +54,42 @@ public class FieldDefinition extends ResourceInfo
       list.add(fieldInfo);
 
       fieldInfo = new FieldInfo("ResourceName", EdmPrimitiveTypeKind.String.getFullQualifiedName());
-      fieldInfo.addAnnotation("The name of the resource the field belongs to. This will be a RESO Standard Name, when applicable, but may also be a local resource name.", "Core.Description");
+      fieldInfo.addAnnotation(
+            "The name of the resource the field belongs to. This will be a RESO Standard Name, when applicable, but may also be a local resource name.",
+            "Core.Description");
       list.add(fieldInfo);
 
       fieldInfo = new FieldInfo("FieldName", EdmPrimitiveTypeKind.String.getFullQualifiedName());
-      fieldInfo.addAnnotation("The name of the field as expressed in the payload. For OData APIs, this field MUST meet certain naming requirements and should be consistent with what's advertised in the OData XML metadata (to be verified in certification). ", "Core.Description");
+      fieldInfo.addAnnotation(
+            "The name of the field as expressed in the payload. For OData APIs, this field MUST meet certain naming requirements and should be consistent with what's advertised in the OData XML metadata (to be verified in certification). ",
+            "Core.Description");
       list.add(fieldInfo);
 
       fieldInfo = new FieldInfo("DisplayName", EdmPrimitiveTypeKind.String.getFullQualifiedName());
-      fieldInfo.addAnnotation("The display name for the field. SHOULD be provided in all cases where the use of display names is needed, even if the display name is the same as the underlying field name. The DisplayName MAY be a RESO Standard Display Name or a local one. ", "Core.Description");
+      fieldInfo.addAnnotation(
+            "The display name for the field. SHOULD be provided in all cases where the use of display names is needed, even if the display name is the same as the underlying field name. The DisplayName MAY be a RESO Standard Display Name or a local one. ",
+            "Core.Description");
       list.add(fieldInfo);
 
       fieldInfo = new FieldInfo("ModificationTimestamp", EdmPrimitiveTypeKind.DateTimeOffset.getFullQualifiedName());
-      fieldInfo.addAnnotation("The timestamp when the field metadata item was last modified. This is used to help rebuild caches when metadata items change so consumers don't have to re-pull and reprocess the entire set of metadata when only a small number of changes have been made.", "Core.Description");
+      fieldInfo.addAnnotation(
+            "The timestamp when the field metadata item was last modified. This is used to help rebuild caches when metadata items change so consumers don't have to re-pull and reprocess the entire set of metadata when only a small number of changes have been made.",
+            "Core.Description");
       list.add(fieldInfo);
 
       return FieldDefinition.fieldList;
    }
 
-   public Boolean useCustomDatasource() { return true; }
+   public Boolean useCustomDatasource() {
+      return true;
+   }
 
-   public Entity getData(EdmEntitySet edmEntitySet, List<UriParameter> keyPredicates)
-   {
+   public Entity getData(EdmEntitySet edmEntitySet, List<UriParameter> keyPredicates) {
       return null;
    }
 
-   public EntityCollection getData(EdmEntitySet edmEntitySet, UriInfo uriInfo, boolean isCount) throws ODataApplicationException {
+   public EntityCollection getData(EdmEntitySet edmEntitySet, UriInfo uriInfo, boolean isCount)
+         throws ODataApplicationException {
       EntityCollection entityCollection = new EntityCollection();
       List<Entity> productList = entityCollection.getEntities();
 
@@ -112,7 +117,8 @@ public class FieldDefinition extends ResourceInfo
             entityValues.put("FieldName", field.getFieldName());
             entityValues.put("ResourceName", resourceName);
             entityValues.put("DisplayName", field.getFieldName());
-            entityValues.put("ModificationTimestamp", generateRandomTimestamp());
+            Date date = new Date();
+            entityValues.put("ModificationTimestamp", date);
 
             boolean match = true;
 
@@ -151,9 +157,12 @@ public class FieldDefinition extends ResourceInfo
                Entity entity = new Entity();
                entity.addProperty(new Property(null, "FieldKey", ValueType.PRIMITIVE, entityValues.get("FieldKey")));
                entity.addProperty(new Property(null, "FieldName", ValueType.PRIMITIVE, entityValues.get("FieldName")));
-               entity.addProperty(new Property(null, "ResourceName", ValueType.PRIMITIVE, entityValues.get("ResourceName")));
-               entity.addProperty(new Property(null, "DisplayName", ValueType.PRIMITIVE, entityValues.get("DisplayName")));
-               entity.addProperty(new Property(null, "ModificationTimestamp", ValueType.PRIMITIVE, entityValues.get("ModificationTimestamp")));
+               entity.addProperty(
+                     new Property(null, "ResourceName", ValueType.PRIMITIVE, entityValues.get("ResourceName")));
+               entity.addProperty(
+                     new Property(null, "DisplayName", ValueType.PRIMITIVE, entityValues.get("DisplayName")));
+               entity.addProperty(new Property(null, "ModificationTimestamp", ValueType.PRIMITIVE,
+                     entityValues.get("ModificationTimestamp")));
 
                productList.add(entity);
             }
@@ -163,8 +172,7 @@ public class FieldDefinition extends ResourceInfo
       return entityCollection;
    }
 
-   public void addResources(ArrayList<ResourceInfo> resources)
-   {
+   public void addResources(ArrayList<ResourceInfo> resources) {
       this.resources = resources;
    }
 
@@ -179,8 +187,8 @@ public class FieldDefinition extends ResourceInfo
    }
 
    /*
-   * Helper for the filtering logic
-   * */
+    * Helper for the filtering logic
+    */
    private boolean matches(Object entityValue, String filterValue, String operator) {
       if (entityValue == null || filterValue == null) {
          return false;
@@ -205,8 +213,8 @@ public class FieldDefinition extends ResourceInfo
    }
 
    /*
-   * Convert filter values from string to necessary type
-   * */
+    * Convert filter values from string to necessary type
+    */
    private Object convertToType(Class<?> type, String value) {
       try {
          if (type == String.class) {
@@ -231,8 +239,8 @@ public class FieldDefinition extends ResourceInfo
    }
 
    /*
-   * Comparator for filtering logic
-   * */
+    * Comparator for filtering logic
+    */
    @SuppressWarnings("unchecked")
    private int compare(Object entityValue, Object filterValue) {
       if (entityValue instanceof Comparable && filterValue instanceof Comparable) {
