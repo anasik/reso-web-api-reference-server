@@ -13,15 +13,10 @@ import org.slf4j.LoggerFactory;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoCursor;
 import com.mongodb.client.MongoDatabase;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.type.CollectionType;
-import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
-import com.google.gson.stream.JsonReader;
 import com.mongodb.client.MongoClient;
 
 import java.io.InputStream;
@@ -46,7 +41,22 @@ public class ExpandHelper {
       OFFICE("Office"),
       CONTACTS("Contacts"),
       TEAMS("Teams"),
-      SHOWING("Showing");
+      SHOWING("Showing"),
+      CONTACT_LISTING_NOTES("ContactListingNotes"),
+      CONTACT_LISTINGS("ContactListings"),
+      HISTORY_TRANSACTIONAL("HistoryTransactional"),
+      INTERNET_TRACKING("InternetTracking"),
+      OPEN_HOUSE("OpenHouse"),
+      OUID("OUID"),
+      PROPERTY_GREEN_VERIFICATION("PropertyGreenVerification"),
+      PROPERTY_POWER_PRODUCTION("PropertyPowerProduction"),
+      PROPERTY_ROOMS("PropertyRooms"),
+      PROPERTYUNITTYPES("PropertyUnitTypes"),
+      PROSPECTING("Prospecting"),
+      QUEUE("Queue"),
+      RULES("Rules"),
+      SAVED_SEARCH("SavedSearch"),
+      TEAMM_EMBERS("TeamMembers");
 
       private final String value;
 
@@ -58,6 +68,13 @@ public class ExpandHelper {
          return value;
       }
 
+      public static ResourceType fromValue(String value) {
+         return Arrays.stream(values())
+                      .filter(rt -> rt.value.equalsIgnoreCase(value))
+                      .findFirst()
+                      .orElse(null);
+     }
+     
    }
 
    private enum CollectionType {
@@ -74,7 +91,9 @@ public class ExpandHelper {
       TEAMS("teams", "Teams"),
       OUID("ouid", "OUID"),
       PROPERTY("property", "Property"),
-      OTHER_PHONE("other_phone", "OtherPhone");
+      OTHER_PHONE("other_phone", "OtherPhone"),
+      CONTACTS("contacts", "Contacts"),
+      CONTACT_LISTING_NOTES("contactlistingnotes", "ContactListingNotes");
 
       private final String collectionName;
       private final String resourceName;
@@ -90,6 +109,13 @@ public class ExpandHelper {
 
       public String getResourceName() {
          return resourceName;
+      }
+
+      public static CollectionType fromValue(String value) {
+         return Arrays.stream(values())
+         .filter(ct -> ct.resourceName.equalsIgnoreCase(value) || ct.collectionName.equalsIgnoreCase(value))
+         .findFirst()
+         .orElse(null);
       }
    }
 
@@ -150,255 +176,55 @@ public class ExpandHelper {
    }
 
    static {
-      initializePropertyNavigations();
-      initializeMemberNavigations();
-      initializeOfficeNavigations();
-      initializeContactNavigations();
-      initializeTeamNavigations();
-      initializeShowingNavigations();
+      initializeNavigations();
    }
 
-   private static void initializePropertyNavigations() {
-      // Agent related navigations
-      NavigationBuilder.from(ResourceType.PROPERTY, "BuyerAgent", CollectionType.MEMBER)
-            .withKeys("BuyerAgentKey", "MemberKey")
-            .asCollection(false)
-            .add();
+   private static void initializeNavigations() {
+      InputStream navigationConfigStream = ExpandHelper.class.getClassLoader()
+            .getResourceAsStream("ExpandNavigationConfig.json");
+      if (navigationConfigStream == null) {
+         LOG.error("Config file not found.");
+         return;
+      }
 
-      NavigationBuilder.from(ResourceType.PROPERTY, "CoBuyerAgent", CollectionType.MEMBER)
-            .withKeys("CoBuyerAgentKey", "MemberKey")
-            .asCollection(false)
-            .add();
+      try (InputStreamReader reader = new InputStreamReader(navigationConfigStream, StandardCharsets.UTF_8)) {
+         JsonObject root = JsonParser.parseReader(reader).getAsJsonObject();
 
-      NavigationBuilder.from(ResourceType.PROPERTY, "CoListAgent", CollectionType.MEMBER)
-            .withKeys("CoListAgentKey", "MemberKey")
-            .asCollection(false)
-            .add();
+         for (Map.Entry<String, JsonElement> entry : root.entrySet()) {
+            String keyName = entry.getKey();
 
-      NavigationBuilder.from(ResourceType.PROPERTY, "ListAgent", CollectionType.MEMBER)
-            .withKeys("ListAgentKey", "MemberKey")
-            .asCollection(false)
-            .add();
+            ResourceType sourceResource = ResourceType.fromValue(keyName);
+            if (sourceResource == null) {
+               LOG.debug("Skipping unknown resource type: " + keyName);
+               continue;
+            }
 
-      // Office related navigations
-      NavigationBuilder.from(ResourceType.PROPERTY, "BuyerOffice", CollectionType.OFFICE)
-            .withKeys("BuyerOfficeKey", "OfficeKey")
-            .asCollection(false)
-            .add();
+            JsonArray navArray = entry.getValue().getAsJsonArray();
+            for (JsonElement navElement : navArray) {
+               processNavigationObject(sourceResource, navElement.getAsJsonObject());
+            }
+         }
+      } catch (Exception e) {
+         e.printStackTrace();
+      }
+   }
 
-      NavigationBuilder.from(ResourceType.PROPERTY, "CoBuyerOffice", CollectionType.OFFICE)
-            .withKeys("CoBuyerOfficeKey", "OfficeKey")
-            .asCollection(false)
-            .add();
+   private static void processNavigationObject(ResourceType sourceResource, JsonObject navObj) {
+      String navProperty = navObj.get("navProperty").getAsString();
+      CollectionType targetCollection = CollectionType.fromValue(getNullableString(navObj, "targetCollection"));
+      String sourceKey = getNullableString(navObj, "sourceKey");
+      String targetKey = getNullableString(navObj, "targetKey");
+      boolean isCollection = navObj.get("isCollection").getAsBoolean();
 
-      NavigationBuilder.from(ResourceType.PROPERTY, "CoListOffice", CollectionType.OFFICE)
-            .withKeys("CoListOfficeKey", "OfficeKey")
-            .asCollection(false)
-            .add();
-
-      NavigationBuilder.from(ResourceType.PROPERTY, "ListOffice", CollectionType.OFFICE)
-            .withKeys("ListOfficeKey", "OfficeKey")
-            .asCollection(false)
-            .add();
-
-      // Team related navigations
-      NavigationBuilder.from(ResourceType.PROPERTY, "BuyerTeam", CollectionType.TEAMS)
-            .withKeys("BuyerTeamKey", "TeamKey")
-            .asCollection(false)
-            .add();
-
-      NavigationBuilder.from(ResourceType.PROPERTY, "ListTeam", CollectionType.TEAMS)
-            .withKeys("ListTeamKey", "TeamKey")
-            .asCollection(false)
-            .add();
-
-      // Resource record based navigations
-      String resourceRecordKey = "ResourceRecordKey,ResourceName";
-      NavigationBuilder.from(ResourceType.PROPERTY, "Media", CollectionType.MEDIA)
-            .withKeys(resourceRecordKey, null)
-            .asCollection(true)
-            .add();
-
-      NavigationBuilder.from(ResourceType.PROPERTY, "SocialMedia", CollectionType.SOCIAL_MEDIA)
-            .withKeys(resourceRecordKey, null)
-            .asCollection(true)
-            .add();
-
-      NavigationBuilder.from(ResourceType.PROPERTY, "HistoryTransactional", CollectionType.HISTORY_TRANSACTIONAL)
-            .withKeys(resourceRecordKey, null)
-            .asCollection(true)
-            .add();
-
-      // ListingKey based navigations
-      String listingKey = "ListingKey";
-      NavigationBuilder.from(ResourceType.PROPERTY, "GreenBuildingVerification", CollectionType.GREEN_VERIFICATION)
-            .withKeys(listingKey, listingKey)
-            .asCollection(true)
-            .add();
-
-      NavigationBuilder.from(ResourceType.PROPERTY, "OpenHouse", CollectionType.OPEN_HOUSE)
-            .withKeys(listingKey, listingKey)
-            .asCollection(true)
-            .add();
-
-      NavigationBuilder.from(ResourceType.PROPERTY, "PowerProduction", CollectionType.POWER_PRODUCTION)
-            .withKeys(listingKey, listingKey)
-            .asCollection(true)
-            .add();
-
-      NavigationBuilder.from(ResourceType.PROPERTY, "Rooms", CollectionType.ROOMS)
-            .withKeys(listingKey, listingKey)
-            .asCollection(true)
-            .add();
-
-      NavigationBuilder.from(ResourceType.PROPERTY, "UnitTypes", CollectionType.UNIT_TYPES)
-            .withKeys(listingKey, listingKey)
-            .asCollection(true)
-            .add();
-
-      // OUID navigations
-      NavigationBuilder.from(ResourceType.PROPERTY, "OriginatingSystem", CollectionType.OUID)
-            .withKeys("OriginatingSystemID", "OrganizationUniqueId")
-            .asCollection(false)
-            .add();
-
-      NavigationBuilder.from(ResourceType.PROPERTY, "SourceSystem", CollectionType.OUID)
-            .withKeys("SourceSystemID", "OrganizationUniqueId")
-            .asCollection(false)
+      NavigationBuilder.from(sourceResource, navProperty, targetCollection)
+            .withKeys(sourceKey, targetKey)
+            .asCollection(isCollection)
             .add();
    }
 
-   private static void initializeMemberNavigations() {
-      String resourceRecordKey = "ResourceRecordKey,ResourceName";
-
-      NavigationBuilder.from(ResourceType.MEMBER, "Office", CollectionType.OFFICE)
-            .withKeys("OfficeKey", "OfficeKey")
-            .asCollection(false)
-            .add();
-
-      NavigationBuilder.from(ResourceType.MEMBER, "Media", CollectionType.MEDIA)
-            .withKeys(resourceRecordKey, null)
-            .asCollection(true)
-            .add();
-
-      NavigationBuilder.from(ResourceType.MEMBER, "MemberSocialMedia", CollectionType.SOCIAL_MEDIA)
-            .withKeys(resourceRecordKey, null)
-            .asCollection(true)
-            .add();
-
-      NavigationBuilder.from(ResourceType.MEMBER, "HistoryTransactional", CollectionType.HISTORY_TRANSACTIONAL)
-            .withKeys(resourceRecordKey, null)
-            .asCollection(true)
-            .add();
-
-      NavigationBuilder.from(ResourceType.MEMBER, "Listings", CollectionType.PROPERTY)
-            .withKeys("MemberKey", "ListAgentKey")
-            .asCollection(true)
-            .add();
-   }
-
-   private static void initializeOfficeNavigations() {
-      NavigationBuilder.from(ResourceType.OFFICE, "MainOffice", CollectionType.OFFICE)
-            .withKeys("MainOfficeKey", "OfficeKey")
-            .asCollection(false)
-            .add();
-
-      NavigationBuilder.from(ResourceType.OFFICE, "OfficeBroker", CollectionType.MEMBER)
-            .withKeys("OfficeBrokerKey", "MemberKey")
-            .asCollection(false)
-            .add();
-
-      NavigationBuilder.from(ResourceType.OFFICE, "OfficeManager", CollectionType.MEMBER)
-            .withKeys("OfficeManagerKey", "MemberKey")
-            .asCollection(false)
-            .add();
-
-      NavigationBuilder.from(ResourceType.OFFICE, "Listings", CollectionType.PROPERTY)
-            .withKeys("OfficeKey", "ListOfficeKey")
-            .asCollection(true)
-            .add();
-
-      NavigationBuilder.from(ResourceType.OFFICE, "Agents", CollectionType.MEMBER)
-            .withKeys("OfficeKey", "OfficeKey")
-            .asCollection(true)
-            .add();
-   }
-
-   private static void initializeContactNavigations() {
-      String resourceRecordKey = "ResourceRecordKey,ResourceName";
-
-      NavigationBuilder.from(ResourceType.CONTACTS, "ContactsOtherPhone", CollectionType.OTHER_PHONE)
-            .withKeys(resourceRecordKey, null)
-            .asCollection(true)
-            .add();
-
-      NavigationBuilder.from(ResourceType.CONTACTS, "ContactsSocialMedia", CollectionType.SOCIAL_MEDIA)
-            .withKeys(resourceRecordKey, null)
-            .asCollection(true)
-            .add();
-
-      NavigationBuilder.from(ResourceType.CONTACTS, "HistoryTransactional", CollectionType.HISTORY_TRANSACTIONAL)
-            .withKeys(resourceRecordKey, null)
-            .asCollection(true)
-            .add();
-
-      NavigationBuilder.from(ResourceType.CONTACTS, "Media", CollectionType.MEDIA)
-            .withKeys(resourceRecordKey, null)
-            .asCollection(true)
-            .add();
-
-      NavigationBuilder.from(ResourceType.CONTACTS, "OwnerMember", CollectionType.MEMBER)
-            .withKeys("OwnerMemberKey", "MemberKey")
-            .asCollection(false)
-            .add();
-   }
-
-   private static void initializeTeamNavigations() {
-      String resourceRecordKey = "ResourceRecordKey,ResourceName";
-
-      NavigationBuilder.from(ResourceType.TEAMS, "TeamLead", CollectionType.MEMBER)
-            .withKeys("TeamLeadKey", "MemberKey")
-            .asCollection(false)
-            .add();
-
-      NavigationBuilder.from(ResourceType.TEAMS, "Media", CollectionType.MEDIA)
-            .withKeys(resourceRecordKey, null)
-            .asCollection(true)
-            .add();
-
-      NavigationBuilder.from(ResourceType.TEAMS, "TeamsSocialMedia", CollectionType.SOCIAL_MEDIA)
-            .withKeys(resourceRecordKey, null)
-            .asCollection(true)
-            .add();
-
-      NavigationBuilder.from(ResourceType.TEAMS, "HistoryTransactional", CollectionType.HISTORY_TRANSACTIONAL)
-            .withKeys(resourceRecordKey, null)
-            .asCollection(true)
-            .add();
-   }
-
-   private static void initializeShowingNavigations() {
-      String resourceRecordKey = "ResourceRecordKey,ResourceName";
-
-      NavigationBuilder.from(ResourceType.SHOWING, "ShowingAgent", CollectionType.MEMBER)
-            .withKeys("ShowingAgentKey", "MemberKey")
-            .asCollection(false)
-            .add();
-
-      NavigationBuilder.from(ResourceType.SHOWING, "Listing", CollectionType.PROPERTY)
-            .withKeys("ListingKey", "ListingKey")
-            .asCollection(false)
-            .add();
-
-      NavigationBuilder.from(ResourceType.SHOWING, "Media", CollectionType.MEDIA)
-            .withKeys(resourceRecordKey, null)
-            .asCollection(true)
-            .add();
-
-      NavigationBuilder.from(ResourceType.SHOWING, "SocialMedia", CollectionType.SOCIAL_MEDIA)
-            .withKeys(resourceRecordKey, null)
-            .asCollection(true)
-            .add();
+   private static String getNullableString(JsonObject object, String key) {
+      JsonElement element = object.get(key);
+      return (element == null || element.isJsonNull()) ? null : element.getAsString();
    }
 
    private static void addNavConfig(String sourceResource, String navProperty, String targetCollection,
