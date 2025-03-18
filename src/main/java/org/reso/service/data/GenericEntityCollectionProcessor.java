@@ -1,11 +1,8 @@
 package org.reso.service.data;
 
-import org.apache.olingo.commons.api.Constants;
 import org.apache.olingo.commons.api.data.*;
 import org.apache.olingo.commons.api.edm.EdmEntitySet;
 import org.apache.olingo.commons.api.edm.EdmEntityType;
-import org.apache.olingo.commons.api.edm.EdmNavigationProperty;
-import org.apache.olingo.commons.api.edm.EdmPrimitiveTypeKind;
 import org.apache.olingo.commons.api.edm.EdmProperty;
 import org.apache.olingo.commons.api.format.ContentType;
 import org.apache.olingo.commons.api.http.HttpHeader;
@@ -20,37 +17,29 @@ import org.apache.olingo.server.api.uri.*;
 import org.apache.olingo.server.api.uri.queryoption.*;
 import org.apache.olingo.server.api.uri.queryoption.expression.Expression;
 import org.apache.olingo.server.api.uri.queryoption.expression.Member;
-import org.bson.BsonDocument;
 import org.bson.Document;
 import org.bson.conversions.Bson;
 import org.reso.service.data.common.CommonDataProcessing;
+import org.reso.service.data.helper.ExpandUtils;
 import org.reso.service.data.meta.FieldInfo;
 import org.reso.service.data.meta.MongoDBFilterExpressionVisitor;
-import org.reso.service.data.meta.MySQLFilterExpressionVisitor;
-import org.reso.service.data.meta.PostgreSQLFilterExpressionVisitor;
 import org.reso.service.data.meta.ResourceInfo;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.mongodb.MongoClientSettings;
 import com.mongodb.client.FindIterable;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoCursor;
 import com.mongodb.client.MongoDatabase;
-import com.mongodb.client.model.Filters;
 import com.mongodb.client.MongoClient;
 
 import java.io.InputStream;
 import java.net.URI;
-import java.net.URISyntaxException;
 import java.sql.*;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import java.util.stream.Collectors;
-
-import static org.reso.service.servlet.RESOservlet.resourceLookup;
 
 public class GenericEntityCollectionProcessor implements EntityCollectionProcessor {
    private OData odata;
@@ -58,443 +47,10 @@ public class GenericEntityCollectionProcessor implements EntityCollectionProcess
    private final MongoClient mongoClient;
    private Connection connect;
    private String dbType;
+   private ExpandUtils expandUtils;
    HashMap<String, ResourceInfo> resourceList = null;
    private static final Logger LOG = LoggerFactory.getLogger(GenericEntityCollectionProcessor.class);
    private static final int PAGE_SIZE = 100;
-   private static final Map<String, NavigationConfig> NAVIGATION_CONFIGS = new HashMap<>();
-
-   private enum ResourceType {
-      PROPERTY("Property"),
-      MEMBER("Member"),
-      OFFICE("Office"),
-      CONTACTS("Contacts"),
-      TEAMS("Teams"),
-      SHOWING("Showing");
-
-      private final String value;
-
-      ResourceType(String value) {
-         this.value = value;
-      }
-
-      public String getValue() {
-         return value;
-      }
-   }
-
-   private enum CollectionType {
-      MEMBER("member", "Member"),
-      OFFICE("office", "Office"),
-      MEDIA("media", "Media"),
-      SOCIAL_MEDIA("socialmedia", "SocialMedia"),
-      HISTORY_TRANSACTIONAL("historytransactional", "HistoryTransactional"),
-      GREEN_VERIFICATION("propertygreenverification", "GreenBuildingVerification"),
-      ROOMS("propertyrooms", "Rooms"),
-      UNIT_TYPES("propertyunittypes", "UnitTypes"),
-      POWER_PRODUCTION("propertypowerproduction", "PowerProduction"),
-      OPEN_HOUSE("openhouse", "OpenHouse"),
-      TEAMS("teams", "Teams"),
-      OUID("ouid", "OUID"),
-      PROPERTY("property", "Property"),
-      OTHER_PHONE("other_phone", "OtherPhone");
-
-      private final String collectionName;
-      private final String resourceName;
-
-      CollectionType(String collectionName, String resourceName) {
-         this.collectionName = collectionName;
-         this.resourceName = resourceName;
-      }
-
-      public String getCollectionName() {
-         return collectionName;
-      }
-
-      public String getResourceName() {
-         return resourceName;
-      }
-   }
-
-   private static class NavigationBuilder {
-      private final ResourceType sourceResource;
-      private final String navProperty;
-      private final CollectionType targetCollection;
-      private String sourceKey;
-      private String targetKey;
-      private boolean isCollection;
-      private long modificationTimestamp;
-
-      private NavigationBuilder(ResourceType sourceResource, String navProperty, CollectionType targetCollection) {
-         this.sourceResource = sourceResource;
-         this.navProperty = navProperty;
-         this.targetCollection = targetCollection;
-         this.modificationTimestamp = System.currentTimeMillis();
-      }
-
-      public static NavigationBuilder from(ResourceType sourceResource, String navProperty,
-            CollectionType targetCollection) {
-         return new NavigationBuilder(sourceResource, navProperty, targetCollection);
-      }
-
-      public NavigationBuilder withKeys(String sourceKey, String targetKey) {
-         this.sourceKey = sourceKey;
-         this.targetKey = targetKey;
-         return this;
-      }
-
-      public NavigationBuilder asCollection(boolean isCollection) {
-         this.isCollection = isCollection;
-         return this;
-      }
-
-      public NavigationBuilder withTimestamp(long timestamp) {
-         this.modificationTimestamp = timestamp;
-         return this;
-      }
-
-      public void add() {
-         addNavConfig(
-               sourceResource.getValue(),
-               navProperty,
-               targetCollection.getCollectionName(),
-               sourceKey,
-               targetKey,
-               isCollection,
-               modificationTimestamp);
-      }
-   }
-
-   private static class ResourceMapping {
-      private static final Map<String, String> COLLECTION_TO_RESOURCE = new HashMap<>();
-
-      static {
-         for (CollectionType type : CollectionType.values()) {
-            COLLECTION_TO_RESOURCE.put(type.getCollectionName(), type.getResourceName());
-         }
-      }
-
-      static String getResourceName(String collection, String navPropertyName) {
-         return COLLECTION_TO_RESOURCE.getOrDefault(collection, navPropertyName);
-      }
-   }
-
-   static {
-      initializePropertyNavigations();
-      initializeMemberNavigations();
-      initializeOfficeNavigations();
-      initializeContactNavigations();
-      initializeTeamNavigations();
-      initializeShowingNavigations();
-   }
-
-   private static void initializePropertyNavigations() {
-      // Agent related navigations
-      NavigationBuilder.from(ResourceType.PROPERTY, "BuyerAgent", CollectionType.MEMBER)
-            .withKeys("BuyerAgentKey", "MemberKey")
-            .asCollection(false)
-            .add();
-
-      NavigationBuilder.from(ResourceType.PROPERTY, "CoBuyerAgent", CollectionType.MEMBER)
-            .withKeys("CoBuyerAgentKey", "MemberKey")
-            .asCollection(false)
-            .add();
-
-      NavigationBuilder.from(ResourceType.PROPERTY, "CoListAgent", CollectionType.MEMBER)
-            .withKeys("CoListAgentKey", "MemberKey")
-            .asCollection(false)
-            .add();
-
-      NavigationBuilder.from(ResourceType.PROPERTY, "ListAgent", CollectionType.MEMBER)
-            .withKeys("ListAgentKey", "MemberKey")
-            .asCollection(false)
-            .add();
-
-      // Office related navigations
-      NavigationBuilder.from(ResourceType.PROPERTY, "BuyerOffice", CollectionType.OFFICE)
-            .withKeys("BuyerOfficeKey", "OfficeKey")
-            .asCollection(false)
-            .add();
-
-      NavigationBuilder.from(ResourceType.PROPERTY, "CoBuyerOffice", CollectionType.OFFICE)
-            .withKeys("CoBuyerOfficeKey", "OfficeKey")
-            .asCollection(false)
-            .add();
-
-      NavigationBuilder.from(ResourceType.PROPERTY, "CoListOffice", CollectionType.OFFICE)
-            .withKeys("CoListOfficeKey", "OfficeKey")
-            .asCollection(false)
-            .add();
-
-      NavigationBuilder.from(ResourceType.PROPERTY, "ListOffice", CollectionType.OFFICE)
-            .withKeys("ListOfficeKey", "OfficeKey")
-            .asCollection(false)
-            .add();
-
-      // Team related navigations
-      NavigationBuilder.from(ResourceType.PROPERTY, "BuyerTeam", CollectionType.TEAMS)
-            .withKeys("BuyerTeamKey", "TeamKey")
-            .asCollection(false)
-            .add();
-
-      NavigationBuilder.from(ResourceType.PROPERTY, "ListTeam", CollectionType.TEAMS)
-            .withKeys("ListTeamKey", "TeamKey")
-            .asCollection(false)
-            .add();
-
-      // Resource record based navigations
-      String resourceRecordKey = "ResourceRecordKey,ResourceName";
-      NavigationBuilder.from(ResourceType.PROPERTY, "Media", CollectionType.MEDIA)
-            .withKeys(resourceRecordKey, null)
-            .asCollection(true)
-            .add();
-
-      NavigationBuilder.from(ResourceType.PROPERTY, "SocialMedia", CollectionType.SOCIAL_MEDIA)
-            .withKeys(resourceRecordKey, null)
-            .asCollection(true)
-            .add();
-
-      NavigationBuilder.from(ResourceType.PROPERTY, "HistoryTransactional", CollectionType.HISTORY_TRANSACTIONAL)
-            .withKeys(resourceRecordKey, null)
-            .asCollection(true)
-            .add();
-
-      // ListingKey based navigations
-      String listingKey = "ListingKey";
-      NavigationBuilder.from(ResourceType.PROPERTY, "GreenBuildingVerification", CollectionType.GREEN_VERIFICATION)
-            .withKeys(listingKey, listingKey)
-            .asCollection(true)
-            .add();
-
-      NavigationBuilder.from(ResourceType.PROPERTY, "OpenHouse", CollectionType.OPEN_HOUSE)
-            .withKeys(listingKey, listingKey)
-            .asCollection(true)
-            .add();
-
-      NavigationBuilder.from(ResourceType.PROPERTY, "PowerProduction", CollectionType.POWER_PRODUCTION)
-            .withKeys(listingKey, listingKey)
-            .asCollection(true)
-            .add();
-
-      NavigationBuilder.from(ResourceType.PROPERTY, "Rooms", CollectionType.ROOMS)
-            .withKeys(listingKey, listingKey)
-            .asCollection(true)
-            .add();
-
-      NavigationBuilder.from(ResourceType.PROPERTY, "UnitTypes", CollectionType.UNIT_TYPES)
-            .withKeys(listingKey, listingKey)
-            .asCollection(true)
-            .add();
-
-      // OUID navigations
-      NavigationBuilder.from(ResourceType.PROPERTY, "OriginatingSystem", CollectionType.OUID)
-            .withKeys("OriginatingSystemID", "OrganizationUniqueId")
-            .asCollection(false)
-            .add();
-
-      NavigationBuilder.from(ResourceType.PROPERTY, "SourceSystem", CollectionType.OUID)
-            .withKeys("SourceSystemID", "OrganizationUniqueId")
-            .asCollection(false)
-            .add();
-   }
-
-   private static void initializeMemberNavigations() {
-      String resourceRecordKey = "ResourceRecordKey,ResourceName";
-
-      NavigationBuilder.from(ResourceType.MEMBER, "Office", CollectionType.OFFICE)
-            .withKeys("OfficeKey", "OfficeKey")
-            .asCollection(false)
-            .add();
-
-      NavigationBuilder.from(ResourceType.MEMBER, "Media", CollectionType.MEDIA)
-            .withKeys(resourceRecordKey, null)
-            .asCollection(true)
-            .add();
-
-      NavigationBuilder.from(ResourceType.MEMBER, "MemberSocialMedia", CollectionType.SOCIAL_MEDIA)
-            .withKeys(resourceRecordKey, null)
-            .asCollection(true)
-            .add();
-
-      NavigationBuilder.from(ResourceType.MEMBER, "HistoryTransactional", CollectionType.HISTORY_TRANSACTIONAL)
-            .withKeys(resourceRecordKey, null)
-            .asCollection(true)
-            .add();
-
-      NavigationBuilder.from(ResourceType.MEMBER, "Listings", CollectionType.PROPERTY)
-            .withKeys("MemberKey", "ListAgentKey")
-            .asCollection(true)
-            .add();
-   }
-
-   private static void initializeOfficeNavigations() {
-      NavigationBuilder.from(ResourceType.OFFICE, "MainOffice", CollectionType.OFFICE)
-            .withKeys("MainOfficeKey", "OfficeKey")
-            .asCollection(false)
-            .add();
-
-      NavigationBuilder.from(ResourceType.OFFICE, "OfficeBroker", CollectionType.MEMBER)
-            .withKeys("OfficeBrokerKey", "MemberKey")
-            .asCollection(false)
-            .add();
-
-      NavigationBuilder.from(ResourceType.OFFICE, "OfficeManager", CollectionType.MEMBER)
-            .withKeys("OfficeManagerKey", "MemberKey")
-            .asCollection(false)
-            .add();
-
-      NavigationBuilder.from(ResourceType.OFFICE, "Listings", CollectionType.PROPERTY)
-            .withKeys("OfficeKey", "ListOfficeKey")
-            .asCollection(true)
-            .add();
-
-      NavigationBuilder.from(ResourceType.OFFICE, "Agents", CollectionType.MEMBER)
-            .withKeys("OfficeKey", "OfficeKey")
-            .asCollection(true)
-            .add();
-   }
-
-   private static void initializeContactNavigations() {
-      String resourceRecordKey = "ResourceRecordKey,ResourceName";
-
-      NavigationBuilder.from(ResourceType.CONTACTS, "ContactsOtherPhone", CollectionType.OTHER_PHONE)
-            .withKeys(resourceRecordKey, null)
-            .asCollection(true)
-            .add();
-
-      NavigationBuilder.from(ResourceType.CONTACTS, "ContactsSocialMedia", CollectionType.SOCIAL_MEDIA)
-            .withKeys(resourceRecordKey, null)
-            .asCollection(true)
-            .add();
-
-      NavigationBuilder.from(ResourceType.CONTACTS, "HistoryTransactional", CollectionType.HISTORY_TRANSACTIONAL)
-            .withKeys(resourceRecordKey, null)
-            .asCollection(true)
-            .add();
-
-      NavigationBuilder.from(ResourceType.CONTACTS, "Media", CollectionType.MEDIA)
-            .withKeys(resourceRecordKey, null)
-            .asCollection(true)
-            .add();
-
-      NavigationBuilder.from(ResourceType.CONTACTS, "OwnerMember", CollectionType.MEMBER)
-            .withKeys("OwnerMemberKey", "MemberKey")
-            .asCollection(false)
-            .add();
-   }
-
-   private static void initializeTeamNavigations() {
-      String resourceRecordKey = "ResourceRecordKey,ResourceName";
-
-      NavigationBuilder.from(ResourceType.TEAMS, "TeamLead", CollectionType.MEMBER)
-            .withKeys("TeamLeadKey", "MemberKey")
-            .asCollection(false)
-            .add();
-
-      NavigationBuilder.from(ResourceType.TEAMS, "Media", CollectionType.MEDIA)
-            .withKeys(resourceRecordKey, null)
-            .asCollection(true)
-            .add();
-
-      NavigationBuilder.from(ResourceType.TEAMS, "TeamsSocialMedia", CollectionType.SOCIAL_MEDIA)
-            .withKeys(resourceRecordKey, null)
-            .asCollection(true)
-            .add();
-
-      NavigationBuilder.from(ResourceType.TEAMS, "HistoryTransactional", CollectionType.HISTORY_TRANSACTIONAL)
-            .withKeys(resourceRecordKey, null)
-            .asCollection(true)
-            .add();
-   }
-
-   private static void initializeShowingNavigations() {
-      String resourceRecordKey = "ResourceRecordKey,ResourceName";
-
-      NavigationBuilder.from(ResourceType.SHOWING, "ShowingAgent", CollectionType.MEMBER)
-            .withKeys("ShowingAgentKey", "MemberKey")
-            .asCollection(false)
-            .add();
-
-      NavigationBuilder.from(ResourceType.SHOWING, "Listing", CollectionType.PROPERTY)
-            .withKeys("ListingKey", "ListingKey")
-            .asCollection(false)
-            .add();
-
-      NavigationBuilder.from(ResourceType.SHOWING, "Media", CollectionType.MEDIA)
-            .withKeys(resourceRecordKey, null)
-            .asCollection(true)
-            .add();
-
-      NavigationBuilder.from(ResourceType.SHOWING, "SocialMedia", CollectionType.SOCIAL_MEDIA)
-            .withKeys(resourceRecordKey, null)
-            .asCollection(true)
-            .add();
-   }
-
-   private static void addNavConfig(String sourceResource, String navProperty, String targetCollection,
-         String sourceKey, String targetKey, boolean isCollection) {
-      addNavConfig(sourceResource, navProperty, targetCollection, sourceKey, targetKey, isCollection,
-            System.currentTimeMillis());
-   }
-
-   private static void addNavConfig(String sourceResource, String navProperty, String targetCollection,
-         String sourceKey, String targetKey, boolean isCollection, long modificationTimestamp) {
-      NAVIGATION_CONFIGS.put(sourceResource + "." + navProperty,
-            new NavigationConfig(targetCollection, sourceKey, targetKey, isCollection, modificationTimestamp));
-   }
-
-   private static class NavigationConfig {
-      final String targetCollection;
-      final String sourceKey;
-      final String targetKey;
-      final boolean isCollection;
-      final long modificationTimestamp;
-
-      NavigationConfig(String targetCollection, String sourceKey, String targetKey, boolean isCollection) {
-         this.targetCollection = targetCollection;
-         this.sourceKey = sourceKey;
-         this.targetKey = targetKey;
-         this.isCollection = isCollection;
-         this.modificationTimestamp = System.currentTimeMillis();
-      }
-
-      NavigationConfig(String targetCollection, String sourceKey, String targetKey, boolean isCollection,
-            long modificationTimestamp) {
-         this.targetCollection = targetCollection;
-         this.sourceKey = sourceKey;
-         this.targetKey = targetKey;
-         this.isCollection = isCollection;
-         this.modificationTimestamp = modificationTimestamp;
-      }
-
-      /**
-       * Get the age of this configuration in milliseconds
-       * 
-       * @return Age in milliseconds
-       */
-      public long getAgeInMillis() {
-         return System.currentTimeMillis() - modificationTimestamp;
-      }
-
-      /**
-       * Check if this configuration is stale (older than the specified threshold)
-       * 
-       * @param thresholdMillis Age threshold in milliseconds
-       * @return true if the configuration is stale
-       */
-      public boolean isStale(long thresholdMillis) {
-         return getAgeInMillis() > thresholdMillis;
-      }
-
-      /**
-       * Get the last modification time as a formatted date string
-       * 
-       * @return Formatted date string
-       */
-      public String getFormattedModificationTime() {
-         return new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(
-               new java.util.Date(modificationTimestamp));
-      }
-   }
 
    public GenericEntityCollectionProcessor(MongoClient mongoClient) {
       this.mongoClient = mongoClient;
@@ -509,6 +65,7 @@ public class GenericEntityCollectionProcessor implements EntityCollectionProcess
       } catch (SQLException e) {
          LOG.error("Failed to establish database connection", e);
       }
+      this.expandUtils = new ExpandUtils(mongoClient);
       this.resourceList = new HashMap<>();
    }
 
@@ -517,7 +74,7 @@ public class GenericEntityCollectionProcessor implements EntityCollectionProcess
       this.odata = odata;
       this.serviceMetadata = serviceMetadata;
       // Log all navigation configurations at startup
-      logNavigationConfigurations();
+      expandUtils.logNavigationConfigurations();
    }
 
    public void addResource(ResourceInfo resource, String name) {
@@ -697,7 +254,7 @@ public class GenericEntityCollectionProcessor implements EntityCollectionProcess
          // Handle $expand if present
          ExpandOption expandOption = uriInfo.getExpandOption();
          if (expandOption != null && !dataCollection.getEntities().isEmpty()) {
-            handleMongoExpand(dataCollection, resource, expandOption);
+            expandUtils.handleMongoExpand(dataCollection, resource, expandOption);
          }
       } catch (Exception e) {
          LOG.error("Error executing MongoDB query: {}", e.getMessage(), e);
@@ -707,147 +264,6 @@ public class GenericEntityCollectionProcessor implements EntityCollectionProcess
       }
 
       return dataCollection;
-   }
-
-   private void handleMongoExpand(EntityCollection sourceCollection, ResourceInfo sourceResource,
-         ExpandOption expandOption) {
-      if (mongoClient == null) {
-         LOG.error("MongoDB client is not initialized");
-         return;
-      }
-
-      try {
-         MongoDatabase database = mongoClient.getDatabase("reso");
-
-         for (Entity sourceEntity : sourceCollection.getEntities()) {
-            for (ExpandItem expandItem : expandOption.getExpandItems()) {
-               handleExpandItem(database, sourceEntity, sourceResource, expandItem);
-            }
-         }
-      } catch (Exception e) {
-         LOG.error("Error in handleMongoExpand: {}", e.getMessage(), e);
-      }
-   }
-
-   private void handleExpandItem(MongoDatabase database, Entity sourceEntity, ResourceInfo sourceResource,
-         ExpandItem expandItem) {
-      UriResource expandPath = expandItem.getResourcePath().getUriResourceParts().get(0);
-      if (!(expandPath instanceof UriResourceNavigation)) {
-         return;
-      }
-
-      UriResourceNavigation expandNavigation = (UriResourceNavigation) expandPath;
-      String navPropertyName = expandNavigation.getProperty().getName();
-      String configKey = sourceResource.getResourceName() + "." + navPropertyName;
-
-      NavigationConfig config = NAVIGATION_CONFIGS.get(configKey);
-      if (config == null) {
-         LOG.warn("Unsupported navigation property: {}", navPropertyName);
-         return;
-      }
-
-      // Log the age of the configuration
-      LOG.debug("Navigation config '{}' age: {} ms, last modified: {}",
-            configKey,
-            config.getAgeInMillis(),
-            config.getFormattedModificationTime());
-
-      // Example of checking if a configuration is stale (older than 24 hours)
-      if (config.isStale(24 * 60 * 60 * 1000)) {
-         LOG.warn("Navigation config '{}' is stale (older than 24 hours)", configKey);
-      }
-
-      Document query = buildNavigationQuery(sourceEntity, sourceResource, config);
-      if (query.isEmpty()) {
-         LOG.warn("No key found for navigation property: {}", navPropertyName);
-         return;
-      }
-
-      EntityCollection expandEntities = executeNavigationQuery(database, config, query, navPropertyName);
-      addNavigationLink(sourceEntity, navPropertyName, expandEntities, config.isCollection);
-   }
-
-   private Document buildNavigationQuery(Entity sourceEntity, ResourceInfo sourceResource, NavigationConfig config) {
-      Document query = new Document();
-
-      if (config.sourceKey.contains(",")) {
-         handleCompositeKey(query, sourceEntity, sourceResource);
-      } else {
-         handleSingleKey(query, sourceEntity, config);
-      }
-
-      return query;
-   }
-
-   private void handleCompositeKey(Document query, Entity sourceEntity, ResourceInfo sourceResource) {
-      Property keyProp = sourceEntity.getProperty(sourceResource.getPrimaryKeyName());
-      if (keyProp != null && keyProp.getValue() != null) {
-         query.append("ResourceRecordKey", keyProp.getValue().toString());
-         query.append("ResourceName", sourceResource.getResourceName());
-      }
-   }
-
-   private void handleSingleKey(Document query, Entity sourceEntity, NavigationConfig config) {
-      Property sourceProp = sourceEntity.getProperty(config.sourceKey);
-      if (sourceProp != null && sourceProp.getValue() != null) {
-         String keyValue = sourceProp.getValue().toString();
-         if (config.targetKey != null) {
-            query.append(config.targetKey, keyValue);
-         } else {
-            query.append(config.sourceKey, keyValue);
-         }
-      }
-   }
-
-   private EntityCollection executeNavigationQuery(MongoDatabase database, NavigationConfig config,
-         Document query, String navPropertyName) {
-      LOG.info("Querying {} with filter: {} (last modified: {})",
-            config.targetCollection,
-            query.toJson(),
-            new java.util.Date(config.modificationTimestamp));
-      MongoCollection<Document> collection = database.getCollection(config.targetCollection);
-      EntityCollection expandEntities = new EntityCollection();
-
-      try (MongoCursor<Document> cursor = collection.find(query).maxTime(5000, TimeUnit.MILLISECONDS).iterator()) {
-         while (cursor.hasNext()) {
-            Document doc = cursor.next();
-            LOG.info("Found {} document: {}", navPropertyName, doc.toJson());
-
-            String resourceName = ResourceMapping.getResourceName(config.targetCollection, navPropertyName);
-            ResourceInfo expandResource = resourceLookup.get(resourceName);
-
-            if (expandResource == null) {
-               LOG.error("Resource not found for expansion: {} (looking up as {})", navPropertyName, resourceName);
-               continue;
-            }
-
-            Entity expandEntity = CommonDataProcessing.getEntityFromDocument(doc, expandResource);
-            expandEntities.getEntities().add(expandEntity);
-         }
-      }
-
-      return expandEntities;
-   }
-
-   private void addNavigationLink(Entity sourceEntity, String navPropertyName,
-         EntityCollection expandEntities, boolean isCollection) {
-      Link link = new Link();
-      link.setTitle(navPropertyName);
-      link.setType(Constants.ENTITY_NAVIGATION_LINK_TYPE);
-
-      if (!expandEntities.getEntities().isEmpty()) {
-         if (isCollection) {
-            link.setInlineEntitySet(expandEntities);
-            LOG.info("Added {} {} items to entity", expandEntities.getEntities().size(), navPropertyName);
-         } else {
-            link.setInlineEntity(expandEntities.getEntities().get(0));
-            LOG.info("Added {} entity", navPropertyName);
-         }
-      } else {
-         LOG.warn("No {} entities found", navPropertyName);
-      }
-
-      sourceEntity.getNavigationLinks().add(link);
    }
 
    protected EntityCollection getDataFromSQL(EdmEntitySet edmEntitySet, UriInfo uriInfo, boolean isCount,
@@ -1002,18 +418,6 @@ public class GenericEntityCollectionProcessor implements EntityCollectionProcess
       } catch (SQLException e) {
          LOG.error("Error getting database type", e);
          return "mongodb";
-      }
-   }
-
-   // Add a new helper method to log all navigation configurations
-   private static void logNavigationConfigurations() {
-      LOG.info("Listing all navigation configurations:");
-      for (Map.Entry<String, NavigationConfig> entry : NAVIGATION_CONFIGS.entrySet()) {
-         NavigationConfig config = entry.getValue();
-         LOG.info("Configuration: {} -> {}, Last Modified: {}",
-               entry.getKey(),
-               config.targetCollection,
-               new java.util.Date(config.modificationTimestamp));
       }
    }
 
