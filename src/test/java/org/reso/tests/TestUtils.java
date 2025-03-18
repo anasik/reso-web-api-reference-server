@@ -11,10 +11,28 @@ import java.lang.reflect.Field;
 import java.nio.file.Paths;
 import java.util.Map;
 import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.logging.Logger;
+import java.util.logging.Level;
+import java.util.logging.FileHandler;
+import java.util.logging.SimpleFormatter;
 
 public class TestUtils {
+    private static final Logger LOGGER = Logger.getLogger(TestUtils.class.getName());
     private static final String CONFIG_FILE = "refServLocal.json";
     private static final String LIMIT = "-l 10";
+
+    static {
+        // Set up file handler for logging
+        try {
+            FileHandler fileHandler = new FileHandler("test-utils.log");
+            fileHandler.setFormatter(new SimpleFormatter());
+            LOGGER.addHandler(fileHandler);
+            LOGGER.setLevel(Level.ALL);
+        } catch (IOException e) {
+            System.err.println("Failed to set up log file: " + e.getMessage());
+        }
+    }
 
     /**
      * Sets an environment variable dynamically within the JVM.
@@ -24,6 +42,7 @@ public class TestUtils {
      */
     @SuppressWarnings("unchecked")
     public static void setEnv(String key, String value) throws Exception {
+        LOGGER.info("Setting environment variable: " + key + " = " + value);
         Map<String, String> env = System.getenv();
         Field field = env.getClass().getDeclaredField("m");
         field.setAccessible(true);
@@ -39,59 +58,133 @@ public class TestUtils {
      * @param version The Data Dictionary version (e.g., "1.7" or "2.0")
      */
     public static void runDDTest(String version) throws IOException, InterruptedException {
+        LOGGER.info("============ STARTING DD TEST FOR VERSION " + version + " ============");
+
+        // Log system properties for diagnosing path issues
+        LOGGER.info("Java Version: " + System.getProperty("java.version"));
+        LOGGER.info("User Directory: " + System.getProperty("user.dir"));
+        LOGGER.info("PATH Environment: " + System.getenv("PATH"));
+
+        // Check web-api-commander path that appears in the error
+        String workDir = System.getProperty("user.dir");
+        String gradlewPath = workDir + "/../web-api-commander/build/libs/gradlew";
+        File gradlewFile = new File(gradlewPath);
+        LOGGER.info("Checking if gradlew exists at: " + gradlewPath + " - Exists: " + gradlewFile.exists());
+
         String lookupType = System.getenv("LOOKUP_TYPE");
+        LOGGER.info("Running test with LOOKUP_TYPE = " + lookupType);
         System.out.println("Running test with LOOKUP_TYPE = " + lookupType);
         ProcessBuilder builder;
 
+        // Build command
+        String[] command;
         if (isWindows()) {
-            System.out.println("isWindows is true");
-            builder = new ProcessBuilder("cmd.exe", "/c",
+            LOGGER.info("Detected Windows OS, preparing Windows-specific command");
+            command = new String[] { "cmd.exe", "/c",
                     "reso-certification-utils",
                     "runDDTests",
                     "-p", CONFIG_FILE,
                     "-v", version,
-                    LIMIT, "-a");
+                    LIMIT, "-a" };
+            builder = new ProcessBuilder(command);
         } else {
-            System.out.println("isWindows is false");
-            builder = new ProcessBuilder(
+            LOGGER.info("Detected non-Windows OS, preparing standard command");
+            command = new String[] {
                     "reso-certification-utils",
                     "runDDTests",
                     "-p", CONFIG_FILE,
                     "-v", version,
-                    LIMIT, "-a");
+                    LIMIT, "-a" };
+            builder = new ProcessBuilder(command);
         }
 
-        builder.directory(new File(System.getProperty("user.dir")));
+        // Log command details
+        StringBuilder commandStr = new StringBuilder();
+        for (String part : command) {
+            commandStr.append(part).append(" ");
+        }
+        LOGGER.info("Executing command: " + commandStr.toString().trim());
+
+        // Set working directory
+        LOGGER.info("Working directory: " + workDir);
+        builder.directory(new File(workDir));
+
+        // Start process
+        LOGGER.info("Starting process...");
         Process process = builder.start();
 
         // Read process output (stdout)
+        LOGGER.info("Reading process output stream...");
         BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
+        StringBuilder stdoutBuilder = new StringBuilder();
         String line;
         while ((line = reader.readLine()) != null) {
-            System.out.println("[CMD] " + line); // Print live output
+            stdoutBuilder.append(line).append("\n");
+            LOGGER.info("[CMD] " + line);
+            System.out.println("[CMD] " + line); // Also print to console
         }
 
         // Read process error (stderr)
+        LOGGER.info("Reading process error stream...");
         BufferedReader errorReader = new BufferedReader(new InputStreamReader(process.getErrorStream()));
+        StringBuilder stderrBuilder = new StringBuilder();
         while ((line = errorReader.readLine()) != null) {
-            System.err.println("[ERROR] " + line); // Print error output
+            stderrBuilder.append(line).append("\n");
+            LOGGER.warning("[ERROR] " + line);
+            System.err.println("[ERROR] " + line); // Also print to console
         }
 
+        // Wait for process to complete
+        LOGGER.info("Waiting for process to complete...");
         int exitCode = process.waitFor();
+        LOGGER.info("Process finished with exit code: " + exitCode);
         System.out.println("Process finished with exit code: " + exitCode);
 
-        // Get the dynamic folder path from refServLocal.json
-        String dynamicFolder = getDynamicFolder();
-        System.out.println("Dynamic folder path: " + dynamicFolder);
+        // Log full stderr for debugging
+        LOGGER.info("========= FULL STDERR =========");
+        LOGGER.info(stderrBuilder.toString());
 
-        String responsePathFull = System.getProperty("user.dir")
-                + "/results/data-dictionary-"
-                + version + "/" + dynamicFolder + "/current/data-dictionary-" + version + ".json";
+        // Check for gradlew error pattern
+        if (stdoutBuilder.toString().contains("gradlew") &&
+                (stdoutBuilder.toString().contains("não é reconhecido") ||
+                        stdoutBuilder.toString().contains("not recognized"))) {
+            LOGGER.severe("DETECTED GRADLEW EXECUTION ERROR! Check system PATH and Gradle installation");
+        }
 
-        File responseFullFile = new File(responsePathFull);
-        System.out.println("responseFullFile: " + responseFullFile);
-        Assertions.assertTrue(responseFullFile.exists(), "Response JSON file not found!");
+        try {
+            // Get the dynamic folder path from refServLocal.json
+            LOGGER.info("Retrieving dynamic folder from configuration...");
+            String dynamicFolder = getDynamicFolder();
+            LOGGER.info("Dynamic folder path: " + dynamicFolder);
+            System.out.println("Dynamic folder path: " + dynamicFolder);
 
+            // Build response file path
+            String responsePathFull = workDir
+                    + "/results/data-dictionary-"
+                    + version + "/" + dynamicFolder + "/current/data-dictionary-" + version + ".json";
+            LOGGER.info("Response file path: " + responsePathFull);
+
+            // Verify response file exists
+            File responseFullFile = new File(responsePathFull);
+            LOGGER.info("Checking if response file exists: " + responseFullFile.exists());
+            System.out.println("responseFullFile: " + responseFullFile);
+
+            if (responseFullFile.exists()) {
+                LOGGER.info("Response file found successfully");
+                // Optionally log file size
+                LOGGER.info("Response file size: " + responseFullFile.length() + " bytes");
+            } else {
+                LOGGER.severe("Response file NOT found at: " + responsePathFull);
+            }
+
+            Assertions.assertTrue(responseFullFile.exists(), "Response JSON file not found!");
+        } catch (Exception e) {
+            LOGGER.log(Level.SEVERE, "Error verifying test results", e);
+            throw e;
+        }
+
+        LOGGER.info("Test completed for DD version " + version);
+        LOGGER.info("============ COMPLETED DD TEST FOR VERSION " + version + " ============");
         System.out.println("Test completed for DD version " + version);
     }
 
@@ -101,7 +194,10 @@ public class TestUtils {
      * @return True if running on Windows, false otherwise.
      */
     private static boolean isWindows() {
-        return System.getProperty("os.name").toLowerCase().contains("win");
+        String os = System.getProperty("os.name").toLowerCase();
+        boolean isWin = os.contains("win");
+        LOGGER.info("Operating system: " + os + " (isWindows=" + isWin + ")");
+        return isWin;
     }
 
     /**
@@ -113,15 +209,30 @@ public class TestUtils {
      */
     private static String getDynamicFolder() throws IOException {
         String jsonFilePath = System.getProperty("user.dir") + "/" + CONFIG_FILE;
-        String jsonContent = new String(Files.readAllBytes(Paths.get(jsonFilePath)));
+        LOGGER.info("Reading configuration from: " + jsonFilePath);
 
-        JsonObject jsonObject = JsonParser.parseString(jsonContent).getAsJsonObject();
-        String providerUoi = jsonObject.get("providerUoi").getAsString();
-        JsonObject config = jsonObject.getAsJsonArray("configs").get(0).getAsJsonObject();
-        String providerUsi = config.get("providerUsi").getAsString();
-        String recipientUoi = config.get("recipientUoi").getAsString();
+        try {
+            String jsonContent = new String(Files.readAllBytes(Paths.get(jsonFilePath)));
+            LOGGER.fine("Configuration content loaded, length: " + jsonContent.length() + " characters");
 
-        return providerUoi + "-" + providerUsi + "/" + recipientUoi;
+            JsonObject jsonObject = JsonParser.parseString(jsonContent).getAsJsonObject();
+            String providerUoi = jsonObject.get("providerUoi").getAsString();
+            LOGGER.info("providerUoi: " + providerUoi);
+
+            JsonObject config = jsonObject.getAsJsonArray("configs").get(0).getAsJsonObject();
+            String providerUsi = config.get("providerUsi").getAsString();
+            LOGGER.info("providerUsi: " + providerUsi);
+
+            String recipientUoi = config.get("recipientUoi").getAsString();
+            LOGGER.info("recipientUoi: " + recipientUoi);
+
+            String dynamicFolder = providerUoi + "-" + providerUsi + "/" + recipientUoi;
+            LOGGER.info("Constructed dynamic folder: " + dynamicFolder);
+            return dynamicFolder;
+        } catch (Exception e) {
+            LOGGER.log(Level.SEVERE, "Error parsing configuration file", e);
+            throw e;
+        }
     }
 
     // example: $ java -jar build/libs/web-api-commander.jar --saveGetRequest --uri
@@ -133,7 +244,9 @@ public class TestUtils {
     // java -jar build/libs/web-api-commander.jar --runRESOScript --inputFile
     // webapiserver.resoscript --generateQueries
     public static int runWebApiCoreTest() throws IOException, InterruptedException {
+        LOGGER.info("============ STARTING WEB API CORE TEST ============");
         String lookupType = System.getenv("LOOKUP_TYPE");
+        LOGGER.info("Running Web API Core test with LOOKUP_TYPE = " + lookupType);
         System.out.println("Running Web API Core test with LOOKUP_TYPE = " + lookupType);
 
         // Determine the correct command
@@ -151,21 +264,32 @@ public class TestUtils {
         }
 
         builder.directory(new File(System.getProperty("user.dir")));
+        LOGGER.info("Starting Web API Core test process...");
         Process process = builder.start();
 
         // Capture output for debugging
+        LOGGER.info("Reading process output...");
         BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
-        reader.lines().forEach(System.out::println);
+        reader.lines().forEach(line -> {
+            LOGGER.info("[WEB API] " + line);
+            System.out.println(line);
+        });
 
         // Capture errors
+        LOGGER.info("Reading process errors...");
         BufferedReader errorReader = new BufferedReader(new InputStreamReader(process.getErrorStream()));
-        errorReader.lines().forEach(System.err::println);
+        errorReader.lines().forEach(line -> {
+            LOGGER.warning("[WEB API ERROR] " + line);
+            System.err.println(line);
+        });
 
         // Wait for process to finish
+        LOGGER.info("Waiting for process to complete...");
         int exitCode = process.waitFor();
+        LOGGER.info("Web API Core Test exited with code: " + exitCode);
         System.out.println("Web API Core Test exited with code: " + exitCode);
+        LOGGER.info("============ COMPLETED WEB API CORE TEST ============");
 
         return exitCode;
     }
-
 }
