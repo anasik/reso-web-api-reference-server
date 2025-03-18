@@ -3,71 +3,87 @@ services:
     restart: on-failure
     build: ./
     ports:
-      - "8080:8080" # Only expose the application port for production
+      - "8080:8080"
     environment:
-      - LOOKUP_TYPE
+      - DB_TYPE
       - MONGO_SYNC_CONNECTION_STR
-      - SQL_CONNECTION_STR
-      - SQL_HOST
-      - SQL_USER
-      - SQL_PASSWORD
-      - SQL_DB_DRIVER
+      - MONGO_DATABASE
+      - MYSQL_HOST
+      - MYSQL_DATABASE
+      - MYSQL_USER
+      - MYSQL_PASSWORD
+      - MYSQL_URL
+      - ENABLE_DEBUG=false
+      - LOOKUP_TYPE
       - CERT_REPORT_FILENAME
-      - ENABLE_DEBUG=false # Ensure debugging is off for production
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+    extra_hosts:
+      - "development.jv79a9p.mongodb.net:89.192.213.96"
+      - "ac-uyghdrj-shard-00-00.jv79a9p.mongodb.net:89.192.205.184"
+      - "ac-uyghdrj-shard-00-01.jv79a9p.mongodb.net:89.192.213.96"
+      - "ac-uyghdrj-shard-00-02.jv79a9p.mongodb.net:89.192.206.237"
     volumes:
       - ./build/libs:/usr/local/tomcat/webapps
     depends_on:
-      - docker-mariadb
+      - mysql-db
+      - mongo-db
 
-  docker-mariadb:
-    restart: always
-    container_name: docker-mariadb
+  mysql-db:
     image: mariadb:latest
+    container_name: mysql-db
     environment:
-      MYSQL_DATABASE: reso_data_dictionary_1_7
-      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_PASSWORD}
       MYSQL_ROOT_HOST: "%"
     volumes:
       - ./sql:/docker-entrypoint-initdb.d
+      - mysql_data:/var/lib/mysql
     ports:
-      - "6033:3306"
+      - "3306:3306"
     healthcheck:
-      test: '/usr/bin/mysql --user=root --password=root --execute "SHOW DATABASES;"'
+      test: '/usr/bin/mysql --user=root --password=${MYSQL_PASSWORD} --execute "SHOW DATABASES;"'
       interval: 2s
       timeout: 20s
       retries: 10
 
+
+# add dummydata
+  mongo-db:
+    image: mongo:latest
+    container_name: mongo-db
+    environment:
+      MONGO_INITDB_DATABASE: ${MONGO_DATABASE}
+    volumes:
+      - ./mongo-init-scripts:/docker-entrypoint-initdb.d
+      - mongo_data:/data/db
+    ports:
+      - "27017:27017"
+
+  # Development Tools
+  mongo-express:
+    image: mongo-express
+    depends_on:
+      - mongo-db
+    ports:
+      - "8081:8081"
+    environment:
+      ME_CONFIG_MONGODB_URL: ${MONGO_SYNC_CONNECTION_STR}
+      ME_CONFIG_BASICAUTH: false
+
   phpmyadmin:
     image: phpmyadmin/phpmyadmin
     platform: linux/amd64
-    restart: always
-    environment:
-      PMA_HOST: docker-mariadb
-      PMA_USER: root
-      PMA_PASSWORD: root
-    ports:
-      - "6034:80"
     depends_on:
-      - docker-mariadb
+      - mysql-db
+    environment:
+      PMA_HOST: mysql-db
+      PMA_USER: ${MYSQL_USER}
+      PMA_PASSWORD: ${MYSQL_PASSWORD}
+    ports:
+      - "8082:80"
 
-#  mongo:
-#    image: mongo
-#    restart: always
-#    ports:
-#      - 27017:27017
-#    environment:
-#      MONGO_INITDB_ROOT_USERNAME: root
-#      MONGO_INITDB_ROOT_PASSWORD: root
-#    volumes:
-#      - ./mongo-init-scripts:/docker-entrypoint-initdb.d
-#
-#  mongo-express:
-#    image: mongo-express
-#    restart: always
-#    ports:
-#      - 8081:8081
-#    environment:
-#      ME_CONFIG_MONGODB_ADMINUSERNAME: root
-#      ME_CONFIG_MONGODB_ADMINPASSWORD: root
-#      ME_CONFIG_MONGODB_URL: mongodb://root:root@mongo:27017/
-#      ME_CONFIG_BASICAUTH: false
+volumes:
+  mysql_data:
+  mongo_data:
