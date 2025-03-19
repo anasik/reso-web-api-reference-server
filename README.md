@@ -102,6 +102,17 @@ $env:LOOKUP_TYPE="ENUM_FLAGS"; ./gradlew test --tests org.reso.tests.LookupEnumF
 $env:LOOKUP_TYPE="ENUM_COLLECTION"; ./gradlew test --tests org.reso.tests.LookupEnumTest
 ```
 
+You can run aditional tests for $expand funtionallity:
+##### Linux / macOS:
+```sh
+./gradlew runExpandUtilsTest --rerun-tasks --info
+```
+
+##### Windows:
+```sh
+./gradlew runExpandUtilsTest --rerun-tasks --info
+```
+
 ### Debugging Issues
 - **Docker Stops During Tests?**
 Check the container logs:

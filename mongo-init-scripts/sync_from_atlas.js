@@ -1,5 +1,5 @@
 // Connect to source (Atlas) and copy to local
-const sourceUri = "mongodb+srv://mappingclient:e1p2vmbSRHADVv6s@development.jv79a9p.mongodb.net/reso";
+const sourceUri = "mongodb://localhost:27017/";
 const collections = [
     "property",
     "media",

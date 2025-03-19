@@ -42,6 +42,7 @@ dependencies {
     testImplementation 'org.junit.jupiter:junit-jupiter-api:5.8.1'
     testImplementation 'org.junit.jupiter:junit-jupiter-engine:5.8.1'
     testImplementation 'org.junit.jupiter:junit-jupiter:5.8.1'
+    implementation 'org.apache.httpcomponents:httpclient:4.5.13'
 
     // Provided dependencies
     compileOnly 'javax.servlet:javax.servlet-api:4.0.1'
@@ -55,6 +56,18 @@ test {
     useJUnitPlatform()
     environment "LOOKUP_TYPE", "STRING"
     environment "DB_TYPE", "mongodb"
+}
+
+tasks.test {
+ useJUnitPlatform()
+    // Exclude ExpandUtilsTest to run it only when needed
+    exclude '**/ExpandUtilsTest.class'
+}
+
+task runExpandUtilsTest(type: Test) {
+    useJUnitPlatform()
+    // Run only ExpandUtilsTest
+    include '**/ExpandUtilsTest.class'
 }
 
 // Ensure compatibility with Java 8
