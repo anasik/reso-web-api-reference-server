@@ -224,29 +224,6 @@
             "isCollection": false
         }
     ],
-    "HistoryTransactional": [
-        {
-            "navProperty": "ChangedByMember",
-            "targetCollection": null,
-            "sourceKey": "ChangedByMemberKey",
-            "targetKey": "MemberKey",
-            "isCollection": false
-        },
-        {
-            "navProperty": "OriginatingSystem",
-            "targetCollection": null,
-            "sourceKey": "OriginatingSystemID",
-            "targetKey": "OrganizationUniqueId",
-            "isCollection": false
-        },
-        {
-            "navProperty": "SourceSystem",
-            "targetCollection": null,
-            "sourceKey": "SourceSystemID",
-            "targetKey": "OrganizationUniqueId",
-            "isCollection": false
-        }
-    ],
     "InternetTracking": [
         {
             "navProperty": "ActorOriginatingSystem",
@@ -340,13 +317,6 @@
             "sourceKey": "SourceSystemID",
             "targetKey": "OrganizationUniqueId",
             "isCollection": false
-        },
-        {
-            "navProperty": "Listings",
-            "targetCollection": "Property",
-            "sourceKey": "MemberKey",
-            "targetKey": "ListAgentKey",
-            "isCollection": true
         }
     ],
     "Office": [
@@ -402,71 +372,6 @@
         {
             "navProperty": "SourceSystem",
             "targetCollection": "OUID",
-            "sourceKey": "SourceSystemID",
-            "targetKey": "OrganizationUniqueId",
-            "isCollection": false
-        },
-        {
-            "navProperty": "Listings",
-            "targetCollection": "Property",
-            "sourceKey": "OfficeKey",
-            "targetKey": "ListOfficeKey",
-            "isCollection": true
-        },
-        {
-            "navProperty": "Agents",
-            "targetCollection": "Member",
-            "sourceKey": "OfficeKey",
-            "targetKey": "OfficeKey",
-            "isCollection": true
-        }
-    ],
-    "OpenHouse": [
-        {
-            "navProperty": "HistoryTransactional",
-            "targetCollection": null,
-            "sourceKey": "ResourceRecordKey,ResourceName",
-            "targetKey": null,
-            "isCollection": true
-        },
-        {
-            "navProperty": "Listing",
-            "targetCollection": null,
-            "sourceKey": "ListingKey",
-            "targetKey": "ListingKey",
-            "isCollection": false
-        },
-        {
-            "navProperty": "Media",
-            "targetCollection": null,
-            "sourceKey": "ResourceRecordKey,ResourceName",
-            "targetKey": null,
-            "isCollection": true
-        },
-        {
-            "navProperty": "OriginatingSystem",
-            "targetCollection": null,
-            "sourceKey": "OriginatingSystemID",
-            "targetKey": "OrganizationUniqueId",
-            "isCollection": false
-        },
-        {
-            "navProperty": "ShowingAgent",
-            "targetCollection": null,
-            "sourceKey": "ShowingAgentKey",
-            "targetKey": "MemberKey",
-            "isCollection": false
-        },
-        {
-            "navProperty": "SocialMedia",
-            "targetCollection": null,
-            "sourceKey": "ResourceRecordKey,ResourceName",
-            "targetKey": null,
-            "isCollection": true
-        },
-        {
-            "navProperty": "SourceSystem",
-            "targetCollection": null,
             "sourceKey": "SourceSystemID",
             "targetKey": "OrganizationUniqueId",
             "isCollection": false
@@ -563,59 +468,6 @@
             "targetCollection": "Property",
             "sourceKey": "ListingKey",
             "targetKey": "ListingKey",
-            "isCollection": false
-        }
-    ],
-    "Prospecting": [
-        {
-            "navProperty": "Contact",
-            "targetCollection": null,
-            "sourceKey": "ContactKey",
-            "targetKey": "ContactKey",
-            "isCollection": false
-        },
-        {
-            "navProperty": "HistoryTransactional",
-            "targetCollection": null,
-            "sourceKey": "ResourceRecordKey,ResourceName",
-            "targetKey": null,
-            "isCollection": true
-        },
-        {
-            "navProperty": "Media",
-            "targetCollection": null,
-            "sourceKey": "ResourceRecordKey,ResourceName",
-            "targetKey": null,
-            "isCollection": true
-        },
-        {
-            "navProperty": "OwnerMember",
-            "targetCollection": null,
-            "sourceKey": "OwnerMemberKey",
-            "targetKey": "MemberKey",
-            "isCollection": false
-        },
-        {
-            "navProperty": "SavedSearch",
-            "targetCollection": null,
-            "sourceKey": "SavedSearchKey",
-            "targetKey": "SavedSearchKey",
-            "isCollection": false
-        }
-    ],
-    "Queue": [
-        {
-            "navProperty": "OriginatingSystem",
-            "targetCollection": null,
-            "sourceKey": "OriginatingSystemID",
-            "targetKey": "OrganizationUniqueId",
-            "isCollection": false
-        },
-        {
-            "navProperty": "SourceSystem",
-            "targetCollection": null,
-            "sourceKey": "SourceSystemID",
-            "targetKey": "OrganizationUniqueId",
             "isCollection": false
         }
     ],
