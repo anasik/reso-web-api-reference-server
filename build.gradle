@@ -110,7 +110,6 @@ task packageCore {
     group = "build"
     description = "Prepares environment, downloads dependencies, builds WAR, and copies metadata."
     dependsOn prepareDirs, war, downloadWebApiCommanderJar, downloadJsonMetadata, copyMetadata
-    // dependsOn prepareDirs, downloadWebApiCommanderJar, downloadJsonMetadata, war, copyMetadata
     doLast {
         println "PackageCore complete. Check build/libs for core.war and metadata JSON."
     }
