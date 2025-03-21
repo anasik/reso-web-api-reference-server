@@ -55,7 +55,9 @@ services:
     container_name: mongo-db
     environment:
       MONGO_INITDB_DATABASE: ${MONGO_DATABASE}
+      CERT_REPORT_FILENAME: ${CERT_REPORT_FILENAME}
     volumes:
+      - "./${CERT_REPORT_FILENAME}:/${CERT_REPORT_FILENAME}"
       - ./mongo-init-scripts:/docker-entrypoint-initdb.d
       - mongo_data:/data/db
     ports:

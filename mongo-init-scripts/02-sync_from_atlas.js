@@ -38,6 +38,5 @@ function copyCollection(collectionName) {
     const data = db[collectionName].find().toArray();
     db[collectionName].insertMany(data);
 }
-
 // Copy each collection
 collections.forEach(copyCollection); 
