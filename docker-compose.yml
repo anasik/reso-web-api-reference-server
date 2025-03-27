@@ -56,6 +56,7 @@ services:
     environment:
       MONGO_INITDB_DATABASE: ${MONGO_DATABASE}
       CERT_REPORT_FILENAME: ${CERT_REPORT_FILENAME}
+      ATLAS_DATAFILL_URI: ${ATLAS_DATAFILL_URI}
     volumes:
       - "./${CERT_REPORT_FILENAME}:/${CERT_REPORT_FILENAME}"
       - ./mongo-init-scripts:/docker-entrypoint-initdb.d

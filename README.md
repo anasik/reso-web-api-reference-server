@@ -90,9 +90,9 @@ To run tests manually with a specific lookup type:
 
 ##### Linux / macOS:
 ```sh
-LOOKUP_TYPE=STRING ./gradlew test --tests org.reso.tests.LookupEnumTest
+LOOKUP_TYPE=STRING ./gradlew test --tests org.reso.tests.LookupStringTest
 LOOKUP_TYPE=ENUM_FLAGS ./gradlew test --tests org.reso.tests.LookupEnumFlagsTest
-LOOKUP_TYPE=ENUM_COLLECTION ./gradlew test --tests org.reso.tests.LookupStringTest
+LOOKUP_TYPE=ENUM_COLLECTION ./gradlew test --tests org.reso.tests.LookupEnumTest
 ```
 
 ##### Windows:
