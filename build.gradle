@@ -53,10 +53,11 @@ group = 'org.reso'
 version = '1.0'
 description = 'RESOservice'
 
+def CERT_REPORT_FILENAME = System.getenv("CERT_REPORT_FILENAME")
 def tempDirFile = new File(project.projectDir, "temp")
 def sqlDirFile = new File(project.projectDir, "sql")
 def webApiCommanderJarFile = new File(project.projectDir, "temp/web-api-commander.jar")
-def jsonMetadataFile = new File(project.projectDir, "RESODataDictionary-1.7.metadata-report.json")
+def jsonMetadataFile = new File(project.projectDir, CERT_REPORT_FILENAME)
 
 war {
     // Override the default naming 
@@ -86,8 +87,8 @@ task downloadWebApiCommanderJar(type: Download) {
 
 task downloadJsonMetadata(type: Download) {
     group = "download"
-    description = "Downloads RESODataDictionary-1.7.metadata-report.json for standalone mode if not present."
-    src 'https://resostuff.blob.core.windows.net/refserverfiles/RESODataDictionary-1.7.metadata-report.json'
+    description = "Downloads RESODataDictionary-x.x.metadata-report.json for standalone mode if not present."
+    src "https://resostuff.blob.core.windows.net/refserverfiles/$CERT_REPORT_FILENAME"
     dest jsonMetadataFile
     // Only download if SQL_HOST is not set AND if the file is missing.
     onlyIf {
@@ -97,7 +98,7 @@ task downloadJsonMetadata(type: Download) {
 
 task copyMetadata(type: Copy) {
     dependsOn downloadJsonMetadata
-    from("$projectDir/RESODataDictionary-1.7.metadata-report.json")
+    from("$projectDir/$CERT_REPORT_FILENAME")
     into("$buildDir/libs")
     doFirst {
         if (!jsonMetadataFile.exists()) {
