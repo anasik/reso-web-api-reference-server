@@ -26,18 +26,18 @@ dependencies {
     api 'com.fasterxml.jackson.core:jackson-databind:2.13.0'
     api 'com.fasterxml.jackson.core:jackson-annotations:2.13.0'
     api 'com.google.code.gson:gson:2.8.9'
-    api 'org.slf4j:slf4j-api:1.7.32'
+    api 'org.slf4j:slf4j-api:2.0.17'
     api 'com.google.code.findbugs:jsr305:3.0.2' 
     // MongoDB dependencies
-    api 'org.mongodb:mongodb-driver-sync:4.4.0'
-    api 'org.mongodb:bson:4.4.0'
+    api 'org.mongodb:mongodb-driver-sync:5.4.0'
+    api 'org.mongodb:bson:5.4.0'
 
     // MySQL dependencies
     implementation 'mysql:mysql-connector-java:8.0.27'
 
     // Runtime dependencies
     runtimeOnly 'org.apache.olingo:odata-server-core:4.9.0'
-    runtimeOnly 'org.slf4j:slf4j-simple:1.7.32'
+    runtimeOnly 'org.slf4j:slf4j-simple:2.0.17'
 
     // Test dependencies
     testImplementation 'org.junit.jupiter:junit-jupiter-api:5.8.1'
@@ -53,7 +53,7 @@ group = 'org.reso'
 version = '1.0'
 description = 'RESOservice'
 
-def CERT_REPORT_FILENAME = System.getenv("CERT_REPORT_FILENAME")
+def CERT_REPORT_FILENAME = System.getenv("CERT_REPORT_FILENAME") ?: "RESODataDictionary-2.0.metadata-report.json"
 def tempDirFile = new File(project.projectDir, "temp")
 def sqlDirFile = new File(project.projectDir, "sql")
 def webApiCommanderJarFile = new File(project.projectDir, "temp/web-api-commander.jar")
