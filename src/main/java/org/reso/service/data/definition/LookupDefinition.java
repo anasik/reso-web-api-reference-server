@@ -25,9 +25,17 @@ public class LookupDefinition extends GenericResourceInfo {
    private static final Object fieldListLock = new Object();
    private static HashMap<String, HashMap<String, String>> lookupCache = new HashMap<>();
    private static HashMap<String, HashMap<String, String>> reverseLookupCache = new HashMap<>();
+   private static final String METADATA_DISPLAYNAME = "RESO.OData.Metadata.DisplayName";
+   private static final String LOOKUP = "lookup";
+   private static final String LOOKUP_KEY = "LookupKey";
+   private static final String LOOKUP_NAME = "LookupName";
+   private static final String LOOKUP_VALUE = "LookupValue";
+   private static final String STANDARD_LOOKUP_VALUE = "StandardLookupValue";    
+   private static final String LEGACY_ODATA_VALUE = "LegacyOdataValue";
+   private static final String MODIFICATION_TIMESTAMP = "ModificationTimestamp";
 
    public LookupDefinition() {
-      super("Lookup", "lookup");
+      super(LOOKUP, LOOKUP);
       // Ensure fieldList is initialized through the getStaticFieldList method
       getStaticFieldList();
    }
@@ -42,23 +50,23 @@ public class LookupDefinition extends GenericResourceInfo {
             if (fieldList == null) {
                ArrayList<FieldInfo> list = new ArrayList<>();
                
-               FieldInfo fieldInfo = new FieldInfo("LookupKey", EdmPrimitiveTypeKind.String.getFullQualifiedName());
-               fieldInfo.addAnnotation("Lookup Key Field", "RESO.OData.Metadata.DisplayName");
+               FieldInfo fieldInfo = new FieldInfo(LOOKUP_KEY, EdmPrimitiveTypeKind.String.getFullQualifiedName());
+               fieldInfo.addAnnotation("Lookup Key Field", METADATA_DISPLAYNAME);
                list.add(fieldInfo);
 
-               fieldInfo = new FieldInfo("LookupName", EdmPrimitiveTypeKind.String.getFullQualifiedName());
+               fieldInfo = new FieldInfo(LOOKUP_NAME, EdmPrimitiveTypeKind.String.getFullQualifiedName());
                list.add(fieldInfo);
 
-               fieldInfo = new FieldInfo("LookupValue", EdmPrimitiveTypeKind.String.getFullQualifiedName());
+               fieldInfo = new FieldInfo(LOOKUP_VALUE, EdmPrimitiveTypeKind.String.getFullQualifiedName());
                list.add(fieldInfo);
 
-               fieldInfo = new FieldInfo("StandardLookupValue", EdmPrimitiveTypeKind.String.getFullQualifiedName());
+               fieldInfo = new FieldInfo(STANDARD_LOOKUP_VALUE, EdmPrimitiveTypeKind.String.getFullQualifiedName());
                list.add(fieldInfo);
 
-               fieldInfo = new FieldInfo("LegacyOdataValue", EdmPrimitiveTypeKind.String.getFullQualifiedName());
+               fieldInfo = new FieldInfo(LEGACY_ODATA_VALUE, EdmPrimitiveTypeKind.String.getFullQualifiedName());
                list.add(fieldInfo);
 
-               fieldInfo = new FieldInfo("ModificationTimestamp", EdmPrimitiveTypeKind.DateTimeOffset.getFullQualifiedName());
+               fieldInfo = new FieldInfo(MODIFICATION_TIMESTAMP, EdmPrimitiveTypeKind.DateTimeOffset.getFullQualifiedName());
                list.add(fieldInfo);
 
                fieldList = list;
@@ -75,9 +83,9 @@ public class LookupDefinition extends GenericResourceInfo {
 
          while (cursor.hasNext()) {
             Document doc = cursor.next();
-            String lookupName = doc.getString("LookupName");
-            String lookupValue = doc.getString("LookupValue");
-            String lookupKey = doc.getString("LookupKey");
+            String lookupName = doc.getString(LOOKUP_NAME);
+            String lookupValue = doc.getString(LOOKUP_VALUE);
+            String lookupKey = doc.getString(LOOKUP_KEY);
 
             lookupCache.putIfAbsent(lookupName, new HashMap<>());
             lookupCache.get(lookupName).put(lookupKey, lookupValue);

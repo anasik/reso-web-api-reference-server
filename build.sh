@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # Define project names
-BUILDER_PROJECT="builder-stack"
-APP_PROJECT="app-stack"
+BUILDER_PROJECT=builder-stack
+APP_PROJECT=app-stack
 
 # Delete build/libs folder if it exists
 echo "Cleaning build/libs directory..."
