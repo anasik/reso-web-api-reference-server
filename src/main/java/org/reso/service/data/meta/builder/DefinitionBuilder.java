@@ -4,6 +4,9 @@ import com.google.gson.stream.JsonReader;
 import org.apache.olingo.commons.api.edm.EdmPrimitiveTypeKind;
 import org.apache.olingo.commons.api.edm.FullQualifiedName;
 import org.reso.service.data.meta.*;
+import org.reso.service.tenant.TenantConfig;
+import org.reso.service.tenant.TenantContext;
+import org.reso.service.tenant.TenantConfigurationService;
 
 import java.io.FileNotFoundException;
 import java.io.FileReader;
@@ -40,7 +43,9 @@ public class DefinitionBuilder {
          .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
 
    private static final Logger LOG = LoggerFactory.getLogger(DefinitionBuilder.class);
-   private static final String LOOKUP_TYPE = System.getenv().get("LOOKUP_TYPE");
+   
+   // Remove static LOOKUP_TYPE and replace with instance variable
+   private final String lookupType;
 
    // Internals
    private final String fileName;
@@ -49,6 +54,21 @@ public class DefinitionBuilder {
    // Constructor
    public DefinitionBuilder(String fileName) {
       this.fileName = fileName;
+      
+      // Get the lookup type from the tenant configuration
+      String tenantId = TenantContext.getCurrentTenant();
+      TenantConfig config = TenantConfigurationService.getTenantConfig(tenantId);
+      this.lookupType = config.getLookupType();
+      
+      LOG.info("Creating DefinitionBuilder for tenant {}, using lookup type: {}", tenantId, this.lookupType);
+      
+      this.openFile();
+   }
+   
+   // Constructor with explicit lookupType (for testing or special cases)
+   public DefinitionBuilder(String fileName, String lookupType) {
+      this.fileName = fileName;
+      this.lookupType = lookupType;
       this.openFile();
    }
 
@@ -195,7 +215,8 @@ public class DefinitionBuilder {
                newField = enumFieldInfo;
 
                ArrayList<GenericGSONobject> lookupList = lookupMap.get(fieldType);
-               Boolean isFlagsLookupType = LOOKUP_TYPE.equals("ENUM_FLAGS"); // add if statement to check if its null
+               // Use instance lookupType instead of static
+               Boolean isFlagsLookupType = this.lookupType.equals("ENUM_FLAGS"); 
 
                boolean setFlags = (isFlagsLookupType && lookupList.size() > 1);
 
@@ -249,45 +270,43 @@ public class DefinitionBuilder {
             }
 
             if (newField != null) {
-               if (maxLength != null) {
-                  newField.setMaxLength(maxLength);
-               }
-               if (scale != null) {
-                  newField.setScale(scale);
-               }
-               if (precision != null) {
-                  newField.setPrecision(precision);
+               if (nullable != null) {
+                  newField.setNullable(nullable);
                }
 
+               if (isCollection) {
+                  newField.setCollection();
+               }
+
+               // Add Field Annotations
                ArrayList<AnnotationObject> annotations = null;
                if (field.getClass().equals(FieldObject.class)) {
                   annotations = ((FieldObject) field).getAnnotations();
                }
+
                if (annotations != null) {
                   for (AnnotationObject annotation : annotations) {
                      newField.addAnnotation((String) annotation.getProperty("value"),
                            (String) annotation.getProperty("term"));
                   }
                }
-               if (isCollection == true) {
-                  newField.setCollection();
-               }
-               if (isExpansion == true) {
-                  newField.setExpansion();
-               }
-               // In cases where we have EnumType metadata being used in a String LookupType
-               // server, we must add LookupName annotations
-               if (LOOKUP_TYPE.equals("STRING") && fieldType.equals("Edm.Int64")) {
-                  newField.addAnnotation("Edm.String", "RESO.OData.Metadata.LookupName");
+
+               // Handle type conversions for STRING lookup type
+               // Use instance lookupType instead of static
+               if (this.lookupType.equals("STRING") && fieldType.equals("Edm.Int64")) {
+                  newField.setType(EdmPrimitiveTypeKind.String.getFullQualifiedName());
                }
 
-               if (LOOKUP_TYPE.equals("STRING") && fieldType.equals("Edm.String") && fieldTypeName != null
-                     && !fieldTypeName.isEmpty()) {
-                  newField.addAnnotation(fieldTypeName, "RESO.OData.Metadata.LookupName");
+               // Use instance lookupType instead of static
+               if (this.lookupType.equals("STRING") && fieldType.equals("Edm.String") && fieldTypeName != null
+                     && (!isExpansion)) {
+                  ((FieldInfo) newField).setTypeAttribute(fieldTypeName);
                }
+
                fieldList.add(newField);
+            } else {
+               LOG.error("Could not parse type " + fieldType);
             }
-
          }
       }
 
@@ -295,82 +314,72 @@ public class DefinitionBuilder {
    }
 
    public List<ResourceInfo> readResources() {
-      ArrayList<GenericGSONobject> fields = new ArrayList();
-      ArrayList<GenericGSONobject> lookups = new ArrayList();
+      List<ResourceInfo> resources = new ArrayList<ResourceInfo>();
 
       try {
+         List<GenericGSONobject> fields = new ArrayList<GenericGSONobject>();
+         List<GenericGSONobject> lookups = new ArrayList<GenericGSONobject>();
+
          reader.beginObject();
-
          while (reader.hasNext()) {
-
             String name = reader.nextName();
-
-            if (HEADER_FIELDS.containsKey(name)) {
-               String headerValue = reader.nextString();
+            if (HEADER_FIELDS.getOrDefault(name, false)) {
+               reader.skipValue();
             } else if (name.equals("fields")) {
-
-               // read array
                reader.beginArray();
-
                while (reader.hasNext()) {
-                  fields.add(this.readField());
+                  FieldObject field = readField();
+                  fields.add(field);
                }
-
                reader.endArray();
-
             } else if (name.equals("lookups")) {
-               // read array
                reader.beginArray();
-
                while (reader.hasNext()) {
-                  lookups.add(this.readLookup());
+                  LookupObject lookup = readLookup();
+                  lookups.add(lookup);
                }
-
                reader.endArray();
             } else {
-               reader.skipValue(); // avoid some unhandle events
+               reader.skipValue();
             }
-
          }
-
          reader.endObject();
+
+         LOG.info("Read " + fields.size() + " fields, " + lookups.size() + " lookups from file");
+
+         resources = createResources((ArrayList<GenericGSONobject>) fields, (ArrayList<GenericGSONobject>) lookups);
       } catch (IOException e) {
-         e.printStackTrace();
+         LOG.error("Error reading resources: ", e);
       }
 
-      if (LOOKUP_TYPE != null)
-         fields.stream().filter(DefinitionBuilder::isEnum).forEach(DefinitionBuilder::morphEnums);
-
-      return createResources(fields, lookups);
+      return resources;
    }
 
-   private static boolean isEnum(GenericGSONobject x) {
-      boolean isExpansion = Boolean.TRUE.equals(x.getProperty("isExpansion"));
-      boolean isComplexType = Boolean.TRUE.equals(x.getProperty("isComplexType"));
-      boolean edm = x.getProperty("type").toString().startsWith("Edm");
-      return !edm && !isExpansion && !isComplexType;
+   public String getLookupType() {
+      // Check if lookupType is set, if not fall back to environment variable
+      if (this.lookupType != null)
+         return this.lookupType;
+
+      // Fall back to environment variable
+      String envLookupType = System.getenv().get("LOOKUP_TYPE");
+      if (envLookupType == null) {
+         LOG.warn("LOOKUP_TYPE environment variable not set, defaulting to STRING");
+         return "STRING";
+      }
+      
+      return envLookupType;
    }
 
-   private static void morphEnums(GenericGSONobject field) {
-      switch (LOOKUP_TYPE) {
+   // Handle type conversions for different lookup types
+   public String getFieldType(String edmType, String lookupName) {
+      // Use instance lookupType instead of static
+      switch (this.lookupType) {
          case "ENUM_FLAGS":
-            if (Boolean.TRUE.equals(field.properties.get("isCollection"))) {
-               field.properties.put("isFlags", true);
-               field.properties.remove("isCollection");
-            }
-            break;
-         case "STRING":
-            field.properties.put("type", "Edm.String");
          case "ENUM_COLLECTION":
-            if (Boolean.TRUE.equals(field.properties.get("isFlags"))) {
-               field.properties.put("isCollection", true);
-               field.properties.remove("isFlags");
-            }
-            break;
+            return "Edm.Int64";
+         case "STRING":
+         default:
+            return "Edm.String";
       }
-   }
-
-   public static String getLookupType() {
-      return LOOKUP_TYPE;
    }
 }
