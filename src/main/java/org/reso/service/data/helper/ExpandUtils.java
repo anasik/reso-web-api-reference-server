@@ -7,6 +7,7 @@ import org.apache.olingo.server.api.uri.queryoption.*;
 import org.bson.Document;
 import org.reso.service.data.common.CommonDataProcessing;
 import org.reso.service.data.meta.ResourceInfo;
+import org.reso.service.tenant.TenantContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -24,7 +25,8 @@ import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
-import static org.reso.service.servlet.RESOservlet.resourceLookup;
+import static org.reso.service.servlet.RESOservlet.getResourceLookupForTenant;
+
 
 public class ExpandUtils {
    private MongoClient mongoClient;
@@ -407,7 +409,7 @@ public class ExpandUtils {
             LOG.info("Found {} document: {}", navPropertyName, doc.toJson());
 
             String resourceName = ResourceMapping.getResourceName(config.targetCollection, navPropertyName);
-            ResourceInfo expandResource = resourceLookup.get(resourceName);
+            ResourceInfo expandResource = getResourceLookupForTenant(TenantContext.getCurrentTenant()).get(resourceName);
 
             if (expandResource == null) {
                LOG.error("Resource not found for expansion: {} (looking up as {})", navPropertyName, resourceName);

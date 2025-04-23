@@ -4,6 +4,9 @@ import com.google.gson.stream.JsonReader;
 import org.apache.olingo.commons.api.edm.EdmPrimitiveTypeKind;
 import org.apache.olingo.commons.api.edm.FullQualifiedName;
 import org.reso.service.data.meta.*;
+import org.reso.service.tenant.TenantConfig;
+import org.reso.service.tenant.TenantConfigurationService;
+import org.reso.service.tenant.TenantContext;
 
 import java.io.FileNotFoundException;
 import java.io.FileReader;
@@ -40,7 +43,7 @@ public class DefinitionBuilder {
          .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
 
    private static final Logger LOG = LoggerFactory.getLogger(DefinitionBuilder.class);
-   private static final String LOOKUP_TYPE = System.getenv().get("LOOKUP_TYPE");
+   private final String lookupType;
 
    // Internals
    private final String fileName;
@@ -49,6 +52,20 @@ public class DefinitionBuilder {
    // Constructor
    public DefinitionBuilder(String fileName) {
       this.fileName = fileName;
+      // Get the lookup type from the tenant configuration
+      String tenantId = TenantContext.getCurrentTenant();
+      TenantConfig config = TenantConfigurationService.getTenantConfig(tenantId);
+      this.lookupType = config.getLookupType();
+
+      LOG.info("Creating DefinitionBuilder for tenant {}, using lookup type: {}", tenantId, this.lookupType);
+
+      this.openFile();
+   }
+
+   // Constructor with explicit lookupType (for testing or special cases)
+   public DefinitionBuilder(String fileName, String lookupType) {
+      this.fileName = fileName;
+      this.lookupType = lookupType;
       this.openFile();
    }
 
@@ -195,7 +212,7 @@ public class DefinitionBuilder {
                newField = enumFieldInfo;
 
                ArrayList<GenericGSONobject> lookupList = lookupMap.get(fieldType);
-               Boolean isFlagsLookupType = LOOKUP_TYPE.equals("ENUM_FLAGS"); // add if statement to check if its null
+               Boolean isFlagsLookupType = this.lookupType.equals("ENUM_FLAGS");
 
                boolean setFlags = (isFlagsLookupType && lookupList.size() > 1);
 
@@ -277,11 +294,11 @@ public class DefinitionBuilder {
                }
                // In cases where we have EnumType metadata being used in a String LookupType
                // server, we must add LookupName annotations
-               if (LOOKUP_TYPE.equals("STRING") && fieldType.equals("Edm.Int64")) {
+               if (this.lookupType.equals("STRING") && fieldType.equals("Edm.Int64")) {
                   newField.addAnnotation("Edm.String", "RESO.OData.Metadata.LookupName");
                }
 
-               if (LOOKUP_TYPE.equals("STRING") && fieldType.equals("Edm.String") && fieldTypeName != null
+               if (this.lookupType.equals("STRING") && fieldType.equals("Edm.String") && fieldTypeName != null
                      && !fieldTypeName.isEmpty()) {
                   newField.addAnnotation(fieldTypeName, "RESO.OData.Metadata.LookupName");
                }
@@ -338,8 +355,8 @@ public class DefinitionBuilder {
          e.printStackTrace();
       }
 
-      if (LOOKUP_TYPE != null)
-         fields.stream().filter(DefinitionBuilder::isEnum).forEach(DefinitionBuilder::morphEnums);
+      if (this.lookupType != null)
+         fields.stream().filter(DefinitionBuilder::isEnum).forEach(x -> morphEnums(x));
 
       return createResources(fields, lookups);
    }
@@ -351,8 +368,8 @@ public class DefinitionBuilder {
       return !edm && !isExpansion && !isComplexType;
    }
 
-   private static void morphEnums(GenericGSONobject field) {
-      switch (LOOKUP_TYPE) {
+   private void morphEnums(GenericGSONobject field) {
+      switch (this.lookupType) {
          case "ENUM_FLAGS":
             if (Boolean.TRUE.equals(field.properties.get("isCollection"))) {
                field.properties.put("isFlags", true);
@@ -370,7 +387,4 @@ public class DefinitionBuilder {
       }
    }
 
-   public static String getLookupType() {
-      return LOOKUP_TYPE;
-   }
 }

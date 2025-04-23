@@ -11,21 +11,16 @@ import org.apache.olingo.server.api.uri.UriInfo;
 import org.apache.olingo.server.api.uri.UriParameter;
 import org.apache.olingo.server.api.uri.queryoption.FilterOption;
 import org.apache.olingo.server.api.uri.queryoption.expression.ExpressionVisitException;
-import org.reso.service.data.common.CommonDataProcessing;
 import org.reso.service.data.meta.BreakdownOfFilterExpressionVisitor;
 import org.reso.service.data.meta.FieldInfo;
 import org.reso.service.data.meta.ResourceInfo;
 
-import java.sql.ResultSet;
-import java.sql.Statement;
 import java.sql.Timestamp;
 import java.text.SimpleDateFormat;
 import java.util.*;
 
 public class FieldDefinition extends ResourceInfo {
-   private static final String STANDARD_NAME = "RESO.OData.Metadata.StandardName";
-
-   private static ArrayList<FieldInfo> fieldList = null;
+   private ArrayList<FieldInfo> fieldList = null;
    private ArrayList<ResourceInfo> resources;
 
    public FieldDefinition() {
@@ -36,16 +31,12 @@ public class FieldDefinition extends ResourceInfo {
    }
 
    public ArrayList<FieldInfo> getFieldList() {
-      return FieldDefinition.getStaticFieldList();
-   }
-
-   public static ArrayList<FieldInfo> getStaticFieldList() {
-      if (null != FieldDefinition.fieldList) {
-         return FieldDefinition.fieldList;
+      if (null != fieldList) {
+         return fieldList;
       }
 
       ArrayList<FieldInfo> list = new ArrayList<>();
-      FieldDefinition.fieldList = list;
+      fieldList = list;
       FieldInfo fieldInfo = null;
 
       fieldInfo = new FieldInfo("FieldKey", EdmPrimitiveTypeKind.String.getFullQualifiedName());
@@ -77,7 +68,7 @@ public class FieldDefinition extends ResourceInfo {
             "Core.Description");
       list.add(fieldInfo);
 
-      return FieldDefinition.fieldList;
+      return fieldList;
    }
 
    public Boolean useCustomDatasource() {

@@ -1,11 +1,8 @@
 package org.reso.service.data;
 
 import com.google.gson.Gson;
-import com.mongodb.MongoClientSettings;
-import com.mongodb.ConnectionString;
 import com.mongodb.MongoException;
 import com.mongodb.ReadPreference;
-import com.mongodb.connection.ClusterConnectionMode;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
 import com.mongodb.client.MongoCollection;
@@ -19,8 +16,6 @@ import org.apache.olingo.commons.api.format.ContentType;
 import org.apache.olingo.commons.api.http.HttpHeader;
 import org.apache.olingo.commons.api.http.HttpStatusCode;
 import org.apache.olingo.server.api.*;
-import org.apache.olingo.server.api.deserializer.DeserializerResult;
-import org.apache.olingo.server.api.deserializer.ODataDeserializer;
 import org.apache.olingo.server.api.processor.EntityProcessor;
 import org.apache.olingo.server.api.serializer.EntitySerializerOptions;
 import org.apache.olingo.server.api.serializer.ODataSerializer;
@@ -28,20 +23,13 @@ import org.apache.olingo.server.api.serializer.SerializerException;
 import org.apache.olingo.server.api.serializer.SerializerResult;
 import org.apache.olingo.server.api.uri.*;
 import org.apache.olingo.server.api.uri.queryoption.ExpandItem;
-import org.apache.olingo.server.api.uri.queryoption.ExpandOption;
-import org.apache.olingo.server.api.uri.queryoption.SelectItem;
-import org.apache.olingo.server.api.uri.queryoption.SelectOption;
 import org.bson.Document;
 import org.reso.service.data.common.CommonDataProcessing;
-import org.reso.service.data.definition.FieldDefinition;
-import org.reso.service.data.meta.EnumFieldInfo;
 import org.reso.service.data.meta.FieldInfo;
 import org.reso.service.data.meta.ResourceInfo;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import com.mongodb.client.model.Sorts;
 
-import java.io.InputStream;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.sql.*;
@@ -50,8 +38,6 @@ import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.Executors;
-
-import static org.reso.service.servlet.RESOservlet.resourceLookup;
 
 public class GenericEntityProcessor implements EntityProcessor {
     private OData odata;
@@ -64,8 +50,9 @@ public class GenericEntityProcessor implements EntityProcessor {
     private final String dbPassword;
     private static final int TIMEOUT = 5000; // 5 seconds timeout
     private static final int MONGO_TIMEOUT = 10000; // 10 seconds timeout for MongoDB operations
+    private final Map<String,ResourceInfo> resourceLookup;
 
-    public GenericEntityProcessor(MongoClient mongoClient) {
+    public GenericEntityProcessor(MongoClient mongoClient, Map<String,ResourceInfo> resourceLookup) {
         Map<String, String> env = System.getenv();
         this.dbUrl = env.getOrDefault("JDBC_URL", "jdbc:mysql://mysql-db:3306/reso");
         this.dbUser = env.getOrDefault("DB_USERNAME", "root");
@@ -73,6 +60,7 @@ public class GenericEntityProcessor implements EntityProcessor {
         this.resourceList = new HashMap<>();
 
         this.mongoClient = mongoClient;
+        this.resourceLookup = resourceLookup;
 
         // Load MySQL driver explicitly
         try {
@@ -332,7 +320,7 @@ public class GenericEntityProcessor implements EntityProcessor {
                                             .first();
 
                                     if (memberDoc != null) {
-                                        LOG.info("Found member document: {}", memberDoc.toJson());
+                                        LOG.info("Found member document: {}", memberDoc.toJson());                   
                                         ResourceInfo memberResource = resourceLookup.get("Member");
                                         if (memberResource != null) {
                                             Entity memberEntity = CommonDataProcessing.getEntityFromDocument(memberDoc,

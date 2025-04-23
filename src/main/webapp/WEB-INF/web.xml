@@ -4,6 +4,17 @@
          xsi:schemaLocation="http://java.sun.com/xml/ns/javaee http://java.sun.com/xml/ns/javaee/web-app_2_5.xsd"
          id="WebApp_ID" version="2.5">
 
+ <!-- Multi-tenant support -->
+    <filter>
+        <filter-name>tenantFilter</filter-name>
+        <filter-class>org.reso.service.tenant.TenantFilter</filter-class>
+    </filter>
+    <filter-mapping>
+        <filter-name>tenantFilter</filter-name>
+        <url-pattern>/*</url-pattern>
+    </filter-mapping>
+
+    <!-- Main servlet -->
     <servlet>
         <servlet-name>RESOservlet</servlet-name>
         <servlet-class>org.reso.service.servlet.RESOservlet</servlet-class>
