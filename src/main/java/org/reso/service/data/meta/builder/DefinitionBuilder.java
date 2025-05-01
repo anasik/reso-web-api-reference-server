@@ -4,13 +4,12 @@ import com.google.gson.stream.JsonReader;
 import org.apache.olingo.commons.api.edm.EdmPrimitiveTypeKind;
 import org.apache.olingo.commons.api.edm.FullQualifiedName;
 import org.reso.service.data.meta.*;
-import org.reso.service.tenant.TenantConfig;
-import org.reso.service.tenant.TenantConfigurationService;
-import org.reso.service.tenant.TenantContext;
+import org.reso.service.tenant.ServerConfig;
+import org.reso.service.tenant.ServersConfigurationService;
+import org.reso.service.tenant.ClientContext;
 
-import java.io.FileNotFoundException;
-import java.io.FileReader;
 import java.io.IOException;
+import java.io.StringReader;
 import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -46,37 +45,16 @@ public class DefinitionBuilder {
    private final String lookupType;
 
    // Internals
-   private final String fileName;
    private JsonReader reader;
 
-   // Constructor
-   public DefinitionBuilder(String fileName) {
-      this.fileName = fileName;
-      // Get the lookup type from the tenant configuration
-      String tenantId = TenantContext.getCurrentTenant();
-      TenantConfig config = TenantConfigurationService.getTenantConfig(tenantId);
-      this.lookupType = config.getLookupType();
+   //  Constructor
+   public DefinitionBuilder(StringReader stringReader) {
 
-      LOG.info("Creating DefinitionBuilder for tenant {}, using lookup type: {}", tenantId, this.lookupType);
-
-      this.openFile();
-   }
-
-   // Constructor with explicit lookupType (for testing or special cases)
-   public DefinitionBuilder(String fileName, String lookupType) {
-      this.fileName = fileName;
-      this.lookupType = lookupType;
-      this.openFile();
-   }
-
-   public void openFile() {
-      try {
-         reader = new JsonReader(new FileReader("webapps/" + fileName));
-      } catch (FileNotFoundException e) {
-         LOG.info("ERROR:", e.getMessage());
-         e.printStackTrace();
-      }
-   }
+    String clientId = ClientContext.getCurrentClient();
+    ServerConfig config = ServersConfigurationService.getServerConfig(clientId);
+    this.lookupType = config.getLookupType();
+    reader = new JsonReader(stringReader);
+ }
 
    private FieldObject readField() {
       return new FieldObject(reader);
@@ -311,7 +289,7 @@ public class DefinitionBuilder {
       return resources;
    }
 
-   public List<ResourceInfo> readResources() {
+   public List<ResourceInfo> readReport() {
       ArrayList<GenericGSONobject> fields = new ArrayList();
       ArrayList<GenericGSONobject> lookups = new ArrayList();
 

@@ -16,6 +16,7 @@ services:
       - ENABLE_DEBUG=false
       - LOOKUP_TYPE
       - CERT_REPORT_FILENAME
+      - JWT_SECRET
     dns:
       - 8.8.8.8
       - 8.8.4.4
@@ -65,27 +66,6 @@ services:
       - "27017:27017"
 
   # Development Tools
-  mongo-express:
-    image: mongo-express
-    depends_on:
-      - mongo-db
-    ports:
-      - "8081:8081"
-    environment:
-      ME_CONFIG_MONGODB_URL: ${MONGO_SYNC_CONNECTION_STR}
-      ME_CONFIG_BASICAUTH: false
-
-  phpmyadmin:
-    image: phpmyadmin/phpmyadmin
-    platform: linux/amd64
-    depends_on:
-      - mysql-db
-    environment:
-      PMA_HOST: mysql-db
-      PMA_USER: ${MYSQL_USER}
-      PMA_PASSWORD: ${MYSQL_PASSWORD}
-    ports:
-      - "8082:80"
 
 volumes:
   mysql_data:

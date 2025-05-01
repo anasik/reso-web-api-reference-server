@@ -1,23 +1,20 @@
 package org.reso.service.servlet.util;
 
+public class SimpleError {
+  private final String error;
 
-public class SimpleError
-{
-   private final String error;
+  // Constants for standard errors.
+  static public String AUTH_REQUIRED = "auth_required";
+  static public String TOKEN_EXPIRED = "token_expired";
+  static public String INVALID_REQUEST = "invalid_request";
+  static public String INTERNAL_ERROR = "internal_error";
 
-   // Constants for standard errors.
-   static public String AUTH_REQUIRED = "auth_required";
-   static public String INVALID_REQUEST = "invalid_request";
+  public SimpleError(String error) {
+    this.error = error;
+  }
 
-
-   public SimpleError(String error)
-   {
-      this.error = error;
-   }
-
-   // Accessor, used by ObjectMapper to serialize the error.
-   public String getError()
-   {
-      return error;
-   }
+  // Accessor, used by ObjectMapper to serialize the error.
+  public String getError() {
+    return error;
+  }
 }

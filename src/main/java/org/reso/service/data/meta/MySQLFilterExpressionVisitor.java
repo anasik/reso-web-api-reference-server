@@ -14,9 +14,9 @@ import org.apache.olingo.server.api.uri.queryoption.expression.Literal;
 import org.apache.olingo.server.api.uri.queryoption.expression.Member;
 import org.apache.olingo.server.api.uri.queryoption.expression.MethodKind;
 import org.apache.olingo.server.api.uri.queryoption.expression.UnaryOperatorKind;
-import org.reso.service.tenant.TenantConfig;
-import org.reso.service.tenant.TenantConfigurationService;
-import org.reso.service.tenant.TenantContext;
+import org.reso.service.tenant.ServerConfig;
+import org.reso.service.tenant.ServersConfigurationService;
+import org.reso.service.tenant.ClientContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -207,8 +207,8 @@ public class MySQLFilterExpressionVisitor implements ExpressionVisitor<String> {
     public String visitLambdaExpression(String lambdaFunction, String lambdaVariable, Expression expression)
             throws ExpressionVisitException, ODataApplicationException {
         boolean isMongo = false;
-        String tenantId = TenantContext.getCurrentTenant();
-        TenantConfig config = TenantConfigurationService.getTenantConfig(tenantId);
+        String clientId = ClientContext.getCurrentClient();
+        ServerConfig config = ServersConfigurationService.getServerConfig(clientId);
         String lookupType = config.getLookupType();
         try {
             isMongo = isMongo();

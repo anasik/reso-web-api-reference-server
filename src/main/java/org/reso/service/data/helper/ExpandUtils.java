@@ -7,7 +7,9 @@ import org.apache.olingo.server.api.uri.queryoption.*;
 import org.bson.Document;
 import org.reso.service.data.common.CommonDataProcessing;
 import org.reso.service.data.meta.ResourceInfo;
-import org.reso.service.tenant.TenantContext;
+import org.reso.service.tenant.ClientContext;
+import org.reso.service.tenant.ServerConfig;
+import org.reso.service.tenant.ServersConfigurationService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -25,7 +27,7 @@ import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
-import static org.reso.service.servlet.RESOservlet.getResourceLookupForTenant;
+import static org.reso.service.tenant.ODataHandlerCache.getResourceLookupForServer;
 
 
 public class ExpandUtils {
@@ -409,7 +411,8 @@ public class ExpandUtils {
             LOG.info("Found {} document: {}", navPropertyName, doc.toJson());
 
             String resourceName = ResourceMapping.getResourceName(config.targetCollection, navPropertyName);
-            ResourceInfo expandResource = getResourceLookupForTenant(TenantContext.getCurrentTenant()).get(resourceName);
+            ServerConfig serverConfig = ServersConfigurationService.getServerConfig(ClientContext.getCurrentClient());
+            ResourceInfo expandResource = getResourceLookupForServer(serverConfig).get(resourceName);
 
             if (expandResource == null) {
                LOG.error("Resource not found for expansion: {} (looking up as {})", navPropertyName, resourceName);

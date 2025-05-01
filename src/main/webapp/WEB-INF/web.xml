@@ -4,14 +4,14 @@
          xsi:schemaLocation="http://java.sun.com/xml/ns/javaee http://java.sun.com/xml/ns/javaee/web-app_2_5.xsd"
          id="WebApp_ID" version="2.5">
 
- <!-- Multi-tenant support -->
+ <!-- JWT Auth -->
     <filter>
-        <filter-name>tenantFilter</filter-name>
-        <filter-class>org.reso.service.tenant.TenantFilter</filter-class>
+        <filter-name>JWTAuthenticationFilter</filter-name>
+        <filter-class>org.reso.service.security.JWTAuthenticationFilter</filter-class>
     </filter>
     <filter-mapping>
-        <filter-name>tenantFilter</filter-name>
-        <url-pattern>/*</url-pattern>
+        <filter-name>JWTAuthenticationFilter</filter-name>
+        <url-pattern>/2.0.0/*</url-pattern>
     </filter-mapping>
 
     <!-- Main servlet -->

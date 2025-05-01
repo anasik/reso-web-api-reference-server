@@ -1,122 +1,160 @@
 package org.reso.service.tenant;
 
+import org.apache.olingo.commons.api.edmx.EdmxReference;
 import org.apache.olingo.server.api.OData;
 import org.apache.olingo.server.api.ODataHttpHandler;
 import org.apache.olingo.server.api.ServiceMetadata;
+import org.bson.Document;
+import org.reso.service.data.GenericEntityCollectionProcessor;
+import org.reso.service.data.GenericEntityProcessor;
+import org.reso.service.data.definition.FieldDefinition;
+import org.reso.service.data.definition.LookupDefinition;
+import org.reso.service.data.meta.ResourceInfo;
+import org.reso.service.data.meta.builder.DefinitionBuilder;
+import org.reso.service.data.mongodb.MongoDBManager;
+import org.reso.service.edmprovider.RESOedmProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.mongodb.client.MongoClient;
+import com.mongodb.client.MongoCollection;
+import com.mongodb.client.MongoDatabase;
+
+import java.io.StringReader;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
-/**
- * Cache for ODataHttpHandlers by tenant.
- * This prevents having to recreate handlers for every request.
- */
+import javax.servlet.ServletException;
+
 public class ODataHandlerCache {
-    private static final Logger LOG = LoggerFactory.getLogger(ODataHandlerCache.class);
-    private static final Map<String, CachedHandler> handlers = new ConcurrentHashMap<>();
+  private static final Logger LOG = LoggerFactory.getLogger(ODataHandlerCache.class);
+  // Maximum number of handlers entries in the cache
+  private static final int MAX_CACHE_SIZE = 100;
+  private static Map<String, Map<String, ResourceInfo>> serverResourceLookup = new HashMap<>();
 
-    // Maximum number of handlers to keep in cache (LRU eviction)
-    private static final int MAX_CACHE_SIZE = 100;
-
-    // Time-to-live for cached handlers in milliseconds (1 hour)
-    private static final long TTL = 60 * 60 * 1000;
-
-    /**
-     * Inner class to hold a cached handler with its timestamp
-     */
-    private static class CachedHandler {
-        final ODataHttpHandler handler;
-        final long timestamp;
-
-        CachedHandler(ODataHttpHandler handler) {
-            this.handler = handler;
-            this.timestamp = System.currentTimeMillis();
+  private static final Map<String, ODataHttpHandler> handlers = Collections.synchronizedMap(
+      new LinkedHashMap<String, ODataHttpHandler>(16, 0.75f, true) {
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<String, ODataHttpHandler> eldest) {
+          return size() > MAX_CACHE_SIZE;
         }
+      });
 
-        boolean isExpired() {
-            return System.currentTimeMillis() - timestamp > TTL;
-        }
+  public static ODataHttpHandler getHandler(String clientId) throws ServletException {
+    // First, check our cache.
+    ServerConfig serverConfig = ServersConfigurationService.getServerConfig(clientId);
+    ODataHttpHandler handler = handlers.get(serverConfig.getUniqueServerConfigName());
+    if (handler != null) {
+      return handler;
     }
 
-    /**
-     * Get a handler from the cache or return null if not found or expired
-     * 
-     * @param tenantId The tenant ID
-     * @return The cached handler or null
-     */
-    public static ODataHttpHandler getHandler(String tenantId) {
-        CachedHandler cached = handlers.get(tenantId);
-        if (cached != null) {
-            if (cached.isExpired()) {
-                LOG.debug("Handler for tenant {} has expired, removing from cache", tenantId);
-                handlers.remove(tenantId);
-                return null;
+    // Not in cache so query MongoDB 
+    MongoDatabase database = MongoDBManager.getDatabase();
+    MongoCollection<Document> collection = database.getCollection("certification_reports");
+    Document query = new Document("certificationReportId", serverConfig.getCertificationReportId());
+    Document doc = collection.find(query).first();
+
+    if (doc == null) {
+      return null;
+    }
+
+    CertificationReport certificationReport = new CertificationReport();
+    certificationReport.setCertificationReportId(serverConfig.getCertificationReportId());
+    certificationReport.setProviderUoi(doc.getString("providerUoi"));
+    certificationReport.setRecipientUoi(doc.getString("recipientUoi"));
+    
+    Object report = doc.get("report");
+    Document reportDoc = (org.bson.Document) report;
+    certificationReport.setReport(reportDoc.toJson());
+
+    handler = createHandler(clientId, certificationReport.getReport(), serverConfig);
+    handlers.put(serverConfig.getUniqueServerConfigName(), handler);
+    return handler;
+
+  }
+
+  private static ODataHttpHandler createHandler(String clientId, String metadata, ServerConfig serverConfig) throws ServletException {
+    LOG.info("creating handler for certification report: {}", serverConfig.getUniqueServerConfigName());
+
+    try {
+
+      // Create EDM provider
+      MongoClient mongoClient = MongoDBManager.getClient();
+      RESOedmProvider edmProvider = new RESOedmProvider();
+
+      serverResourceLookup.putIfAbsent(serverConfig.getUniqueServerConfigName(), new HashMap<>());
+      Map<String, ResourceInfo> resourceLookup = serverResourceLookup.get(serverConfig.getUniqueServerConfigName());
+
+      ArrayList<ResourceInfo> resources = new ArrayList<>();
+
+      FieldDefinition fieldDefinition = new FieldDefinition();
+      resources.add(fieldDefinition);
+      fieldDefinition.addResources(resources);
+      resourceLookup.put(fieldDefinition.getResourceName(), fieldDefinition);
+
+      if (metadata != null) {
+    
+        DefinitionBuilder definitionBuilder = new DefinitionBuilder(new StringReader(metadata));
+        List<ResourceInfo> loadedResources = definitionBuilder.readReport();
+
+        for (ResourceInfo resource : loadedResources) {
+          if (!(resource.getResourceName()).equals("Field") && !(resource.getResourceName()).equals("Lookup")) {
+            try {
+              resource.findMongoPrimaryKey(mongoClient);
+              resources.add(resource);
+              resourceLookup.put(resource.getResourceName(), resource);
+            } catch (Exception e) {
+              LOG.error("Error with: " + resource.getResourceName() + " - " + e.getMessage());
             }
-            LOG.debug("Using cached handler for tenant {}", tenantId);
-            return cached.handler;
+          }
         }
-        return null;
+      } 
+
+      LookupDefinition defn = new LookupDefinition();
+      try {
+        defn.findMongoPrimaryKey(mongoClient);
+        resources.add(defn);
+        resourceLookup.put(defn.getResourceName(), defn);
+        LookupDefinition.loadCache(mongoClient, defn);
+      } catch (Exception e) {
+        LOG.error(e.getMessage());
+      }
+
+      OData odata = OData.newInstance();
+      ServiceMetadata edm = odata.createServiceMetadata(edmProvider, new ArrayList<EdmxReference>());
+
+      // Create handler
+      ODataHttpHandler handler = odata.createHandler(edm);
+
+      // Register processors
+      GenericEntityCollectionProcessor entityCollectionProcessor = new GenericEntityCollectionProcessor(mongoClient);
+      GenericEntityProcessor entityProcessor = new GenericEntityProcessor(mongoClient, resourceLookup);
+
+      handler.register(entityCollectionProcessor);
+      handler.register(entityProcessor);
+
+      for (ResourceInfo resource : resources) {
+        LOG.info("Resource importing for client {}: {}", clientId, resource.getResourceName());
+        edmProvider.addDefinition(resource);
+
+        entityCollectionProcessor.addResource(resource, resource.getResourceName());
+        entityProcessor.addResource(resource, resource.getResourceName());
+      }
+
+      LOG.info("Successfully created handler for certification report {} with {} resources", serverConfig.getUniqueServerConfigName(), resources.size());
+      return handler;
+
+    } catch (Exception e) {
+      LOG.error("Error creating handler for certification report: " + serverConfig.getUniqueServerConfigName(), e);
+      throw new ServletException("Failed to create handler for certification report: " + serverConfig.getUniqueServerConfigName(), e);
     }
 
-    /**
-     * Store a handler in the cache
-     * 
-     * @param tenantId The tenant ID
-     * @param odata The OData instance
-     * @param serviceMetadata The service metadata
-     * @return The cached handler
-     */
-    public static ODataHttpHandler cacheHandler(String tenantId, OData odata, ServiceMetadata serviceMetadata) {
-        // Check if cache is full and evict oldest entry if necessary
-        if (handlers.size() >= MAX_CACHE_SIZE) {
-            evictOldest();
-        }
-
-        ODataHttpHandler handler = odata.createHandler(serviceMetadata);
-        handlers.put(tenantId, new CachedHandler(handler));
-        LOG.debug("Cached handler for tenant {}", tenantId);
-
-        return handler;
+  }
+     public static Map<String, ResourceInfo> getResourceLookupForServer(ServerConfig serverConfig) {
+        return serverResourceLookup.getOrDefault(serverConfig.getUniqueServerConfigName(), new HashMap<>());
     }
-
-    /**
-     * Remove a handler from the cache
-     * 
-     * @param tenantId The tenant ID
-     */
-    public static void invalidate(String tenantId) {
-        handlers.remove(tenantId);
-        LOG.debug("Removed handler for tenant {} from cache", tenantId);
-    }
-
-    /**
-     * Clear the entire cache
-     */
-    public static void invalidateAll() {
-        handlers.clear();
-        LOG.info("Cleared entire handler cache");
-    }
-
-    /**
-     * Evict the oldest handler from the cache
-     */
-    private static void evictOldest() {
-        String oldestTenantId = null;
-        long oldestTimestamp = Long.MAX_VALUE;
-
-        for (Map.Entry<String, CachedHandler> entry : handlers.entrySet()) {
-            if (entry.getValue().timestamp < oldestTimestamp) {
-                oldestTimestamp = entry.getValue().timestamp;
-                oldestTenantId = entry.getKey();
-            }
-        }
-
-        if (oldestTenantId != null) {
-            handlers.remove(oldestTenantId);
-            LOG.debug("Evicted oldest handler for tenant {} from cache", oldestTenantId);
-        }
-    }
-
-} 
+}

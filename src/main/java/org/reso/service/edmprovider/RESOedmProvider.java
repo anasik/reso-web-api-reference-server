@@ -8,9 +8,9 @@ import org.reso.service.data.meta.EnumFieldInfo;
 import org.reso.service.data.meta.EnumValueInfo;
 import org.reso.service.data.meta.FieldInfo;
 import org.reso.service.data.meta.ResourceInfo;
-import org.reso.service.tenant.TenantConfig;
-import org.reso.service.tenant.TenantConfigurationService;
-import org.reso.service.tenant.TenantContext;
+import org.reso.service.tenant.ServerConfig;
+import org.reso.service.tenant.ServersConfigurationService;
+import org.reso.service.tenant.ClientContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -325,8 +325,8 @@ public class RESOedmProvider extends CsdlAbstractEdmProvider {
       schemas.add(schema);
 
 
-      String tenantId = TenantContext.getCurrentTenant();
-      TenantConfig config = TenantConfigurationService.getTenantConfig(tenantId);
+      String clientId = ClientContext.getCurrentClient();
+      ServerConfig config = ServersConfigurationService.getServerConfig(clientId);
       String lookupType = config.getLookupType();
       
       if (!lookupType.equals("STRING"))
