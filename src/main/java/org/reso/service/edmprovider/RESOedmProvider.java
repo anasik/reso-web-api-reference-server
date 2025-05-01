@@ -8,6 +8,9 @@ import org.reso.service.data.meta.EnumFieldInfo;
 import org.reso.service.data.meta.EnumValueInfo;
 import org.reso.service.data.meta.FieldInfo;
 import org.reso.service.data.meta.ResourceInfo;
+import org.reso.service.tenant.ServerConfig;
+import org.reso.service.tenant.ServersConfigurationService;
+import org.reso.service.tenant.ClientContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -20,13 +23,11 @@ public class RESOedmProvider extends CsdlAbstractEdmProvider {
 
    // EDM Container
    public static final String CONTAINER_NAME = "Container";
-   public static final FullQualifiedName CONTAINER = new FullQualifiedName(NAMESPACE, CONTAINER_NAME);
-
-   private static final String LOOKUP_TYPE = System.getenv().get("LOOKUP_TYPE");
+   public final FullQualifiedName CONTAINER = new FullQualifiedName(NAMESPACE, CONTAINER_NAME);
 
    private static final Logger LOG = LoggerFactory.getLogger(RESOedmProvider.class);
 
-   private static HashMap<String, ArrayList<FieldInfo>> navigationProperties = new HashMap<>();
+   private HashMap<String, ArrayList<FieldInfo>> navigationProperties = new HashMap<>();
 
    @Override
    public CsdlEntityType getEntityType(FullQualifiedName entityTypeName) {
@@ -323,7 +324,12 @@ public class RESOedmProvider extends CsdlAbstractEdmProvider {
       List<CsdlSchema> schemas = new ArrayList<>();
       schemas.add(schema);
 
-      if (!LOOKUP_TYPE.equals("STRING"))
+
+      String clientId = ClientContext.getCurrentClient();
+      ServerConfig config = ServersConfigurationService.getServerConfig(clientId);
+      String lookupType = config.getLookupType();
+      
+      if (!lookupType.equals("STRING"))
          schemas.add(enumSchema);
 
       return schemas;

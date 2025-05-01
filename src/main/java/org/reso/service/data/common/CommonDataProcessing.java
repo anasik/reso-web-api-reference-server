@@ -10,11 +10,12 @@ import org.bson.Document;
 import org.reso.service.data.definition.LookupDefinition;
 import org.reso.service.data.meta.*;
 import org.reso.service.data.mongodb.MongoDBManager;
+import org.reso.service.tenant.ClientContext;
+import org.reso.service.tenant.ServerConfig;
+import org.reso.service.tenant.ServersConfigurationService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import com.mongodb.client.MongoCollection;
-import com.mongodb.client.model.Filters;
-
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.sql.Connection;
@@ -26,8 +27,7 @@ import java.time.Instant;
 import java.time.format.DateTimeParseException;
 import java.util.*;
 
-import static org.reso.service.servlet.RESOservlet.resourceLookup;
-
+import static org.reso.service.tenant.ODataHandlerCache.getResourceLookupForServer;
 public class CommonDataProcessing {
    private static final Logger LOG = LoggerFactory.getLogger(CommonDataProcessing.class);
    private static HashMap<String, List<FieldInfo>> resourceEnumFields = new HashMap<>();
@@ -369,7 +369,9 @@ public class CommonDataProcessing {
       EdmEntityType expandEdmEntityType = edmNavigationProperty.getType();
       Property expandResourceKey = sourceEntity.getProperty(edmNavigationProperty.getName() + "Key");
       boolean isCollection = edmNavigationProperty.isCollection();
-      ResourceInfo expandResource = resourceLookup.get(expandEdmEntityType.getName());
+
+      ServerConfig serverConfig = ServersConfigurationService.getServerConfig(ClientContext.getCurrentClient());
+      ResourceInfo expandResource = getResourceLookupForServer(serverConfig).get(expandEdmEntityType.getName());
       LOG.info("ResourceName: " + sourceResource.getResourceName());
       LOG.info("ResourceRecordKey: " + sourceKey);
       LOG.info("expandResource.getResourceName(): " + expandResource.getResourceName());

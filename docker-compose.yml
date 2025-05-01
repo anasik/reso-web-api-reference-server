@@ -16,6 +16,7 @@ services:
       - ENABLE_DEBUG=false
       - LOOKUP_TYPE
       - CERT_REPORT_FILENAME
+      - JWT_SECRET
     dns:
       - 8.8.8.8
       - 8.8.4.4

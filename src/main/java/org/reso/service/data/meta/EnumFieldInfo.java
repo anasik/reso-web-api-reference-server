@@ -1,21 +1,18 @@
 package org.reso.service.data.meta;
 
-import org.apache.olingo.commons.api.data.Entity;
-import org.apache.olingo.commons.api.data.Property;
 import org.apache.olingo.commons.api.edm.FullQualifiedName;
-import org.reso.service.data.common.CommonDataProcessing;
+import org.reso.service.data.mongodb.MongoDBManager;
+import org.reso.service.tenant.ClientContext;
+import org.reso.service.tenant.ServerConfig;
+import org.reso.service.tenant.ServersConfigurationService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.sql.Connection;
-import java.sql.ResultSet;
-import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
 
-import static org.reso.service.servlet.RESOservlet.resourceLookup;
-import static org.reso.service.servlet.RESOservlet.getMongoClient;
+import static org.reso.service.tenant.ODataHandlerCache.getResourceLookupForServer;
 
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoCollection;
@@ -41,9 +38,10 @@ public class EnumFieldInfo extends FieldInfo {
    }
 
    private void loadValues() {
-      ResourceInfo resource = resourceLookup.get("Lookup");
+      ServerConfig serverConfig = ServersConfigurationService.getServerConfig(ClientContext.getCurrentClient());
+      ResourceInfo resource = getResourceLookupForServer(serverConfig).get("Lookup");
       if (resource != null) {
-         MongoClient mongoClient = getMongoClient();
+         MongoClient mongoClient = MongoDBManager.getClient();
          try {
             MongoCollection<Document> collection = mongoClient.getDatabase("reso")
                   .getCollection(resource.getTableName());

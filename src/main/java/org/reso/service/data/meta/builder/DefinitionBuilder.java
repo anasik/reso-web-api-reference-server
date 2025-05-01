@@ -4,10 +4,12 @@ import com.google.gson.stream.JsonReader;
 import org.apache.olingo.commons.api.edm.EdmPrimitiveTypeKind;
 import org.apache.olingo.commons.api.edm.FullQualifiedName;
 import org.reso.service.data.meta.*;
+import org.reso.service.tenant.ServerConfig;
+import org.reso.service.tenant.ServersConfigurationService;
+import org.reso.service.tenant.ClientContext;
 
-import java.io.FileNotFoundException;
-import java.io.FileReader;
 import java.io.IOException;
+import java.io.StringReader;
 import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -40,26 +42,19 @@ public class DefinitionBuilder {
          .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
 
    private static final Logger LOG = LoggerFactory.getLogger(DefinitionBuilder.class);
-   private static final String LOOKUP_TYPE = System.getenv().get("LOOKUP_TYPE");
+   private final String lookupType;
 
    // Internals
-   private final String fileName;
    private JsonReader reader;
 
-   // Constructor
-   public DefinitionBuilder(String fileName) {
-      this.fileName = fileName;
-      this.openFile();
-   }
+   //  Constructor
+   public DefinitionBuilder(StringReader stringReader) {
 
-   public void openFile() {
-      try {
-         reader = new JsonReader(new FileReader("webapps/" + fileName));
-      } catch (FileNotFoundException e) {
-         LOG.info("ERROR:", e.getMessage());
-         e.printStackTrace();
-      }
-   }
+    String clientId = ClientContext.getCurrentClient();
+    ServerConfig config = ServersConfigurationService.getServerConfig(clientId);
+    this.lookupType = config.getLookupType();
+    reader = new JsonReader(stringReader);
+ }
 
    private FieldObject readField() {
       return new FieldObject(reader);
@@ -195,7 +190,7 @@ public class DefinitionBuilder {
                newField = enumFieldInfo;
 
                ArrayList<GenericGSONobject> lookupList = lookupMap.get(fieldType);
-               Boolean isFlagsLookupType = LOOKUP_TYPE.equals("ENUM_FLAGS"); // add if statement to check if its null
+               Boolean isFlagsLookupType = this.lookupType.equals("ENUM_FLAGS");
 
                boolean setFlags = (isFlagsLookupType && lookupList.size() > 1);
 
@@ -277,11 +272,11 @@ public class DefinitionBuilder {
                }
                // In cases where we have EnumType metadata being used in a String LookupType
                // server, we must add LookupName annotations
-               if (LOOKUP_TYPE.equals("STRING") && fieldType.equals("Edm.Int64")) {
+               if (this.lookupType.equals("STRING") && fieldType.equals("Edm.Int64")) {
                   newField.addAnnotation("Edm.String", "RESO.OData.Metadata.LookupName");
                }
 
-               if (LOOKUP_TYPE.equals("STRING") && fieldType.equals("Edm.String") && fieldTypeName != null
+               if (this.lookupType.equals("STRING") && fieldType.equals("Edm.String") && fieldTypeName != null
                      && !fieldTypeName.isEmpty()) {
                   newField.addAnnotation(fieldTypeName, "RESO.OData.Metadata.LookupName");
                }
@@ -294,7 +289,7 @@ public class DefinitionBuilder {
       return resources;
    }
 
-   public List<ResourceInfo> readResources() {
+   public List<ResourceInfo> readReport() {
       ArrayList<GenericGSONobject> fields = new ArrayList();
       ArrayList<GenericGSONobject> lookups = new ArrayList();
 
@@ -338,8 +333,8 @@ public class DefinitionBuilder {
          e.printStackTrace();
       }
 
-      if (LOOKUP_TYPE != null)
-         fields.stream().filter(DefinitionBuilder::isEnum).forEach(DefinitionBuilder::morphEnums);
+      if (this.lookupType != null)
+         fields.stream().filter(DefinitionBuilder::isEnum).forEach(x -> morphEnums(x));
 
       return createResources(fields, lookups);
    }
@@ -351,8 +346,8 @@ public class DefinitionBuilder {
       return !edm && !isExpansion && !isComplexType;
    }
 
-   private static void morphEnums(GenericGSONobject field) {
-      switch (LOOKUP_TYPE) {
+   private void morphEnums(GenericGSONobject field) {
+      switch (this.lookupType) {
          case "ENUM_FLAGS":
             if (Boolean.TRUE.equals(field.properties.get("isCollection"))) {
                field.properties.put("isFlags", true);
@@ -370,7 +365,4 @@ public class DefinitionBuilder {
       }
    }
 
-   public static String getLookupType() {
-      return LOOKUP_TYPE;
-   }
 }

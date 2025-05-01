@@ -26,6 +26,13 @@ public class MongoDBManager {
         }
     }
 
+    public static MongoClient getClient() {
+      if (mongoClient == null) {
+          throw new RuntimeException("Mongo client not initialized");
+      }
+      return mongoClient;
+  }
+
     public static MongoDatabase getDatabase() {
         if (database == null) {
             throw new RuntimeException("MongoDB database not initialized");

@@ -28,6 +28,12 @@ dependencies {
     api 'com.google.code.gson:gson:2.8.9'
     api 'org.slf4j:slf4j-api:2.0.17'
     api 'com.google.code.findbugs:jsr305:3.0.2' 
+
+    // JSON Web Token dependencies
+    implementation 'io.jsonwebtoken:jjwt-api:0.11.5'
+    runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.11.5'
+    runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.11.5'
+    
     // MongoDB dependencies
     api 'org.mongodb:mongodb-driver-sync:5.4.0'
     api 'org.mongodb:bson:5.4.0'
@@ -53,11 +59,9 @@ group = 'org.reso'
 version = '1.0'
 description = 'RESOservice'
 
-def CERT_REPORT_FILENAME = System.getenv("CERT_REPORT_FILENAME") ?: "RESODataDictionary-2.0.metadata-report.json"
 def tempDirFile = new File(project.projectDir, "temp")
 def sqlDirFile = new File(project.projectDir, "sql")
 def webApiCommanderJarFile = new File(project.projectDir, "temp/web-api-commander.jar")
-def jsonMetadataFile = new File(project.projectDir, CERT_REPORT_FILENAME)
 
 war {
     // Override the default naming 
@@ -85,32 +89,10 @@ task downloadWebApiCommanderJar(type: Download) {
     }
 }
 
-task downloadJsonMetadata(type: Download) {
-    group = "download"
-    description = "Downloads RESODataDictionary-x.x.metadata-report.json for standalone mode if not present."
-    src "https://resostuff.blob.core.windows.net/refserverfiles/$CERT_REPORT_FILENAME"
-    dest jsonMetadataFile
-    // Only download if SQL_HOST is not set AND if the file is missing.
-    onlyIf {
-        return (System.getenv("SQL_HOST") == null || System.getenv("SQL_HOST").trim().isEmpty()) && !jsonMetadataFile.exists()
-    }
-}
-
-task copyMetadata(type: Copy) {
-    dependsOn downloadJsonMetadata
-    from("$projectDir/$CERT_REPORT_FILENAME")
-    into("$buildDir/libs")
-    doFirst {
-        if (!jsonMetadataFile.exists()) {
-            throw new GradleException("Metadata JSON not found at: ${jsonMetadataFile}")
-        } 
-    }
-}
-
 task packageCore {
     group = "build"
     description = "Prepares environment, downloads dependencies, builds WAR, and copies metadata."
-    dependsOn prepareDirs, war, downloadWebApiCommanderJar, downloadJsonMetadata, copyMetadata
+    dependsOn prepareDirs, war, downloadWebApiCommanderJar
     doLast {
         println "PackageCore complete. Check build/libs for core.war and metadata JSON."
     }

@@ -4,6 +4,17 @@
          xsi:schemaLocation="http://java.sun.com/xml/ns/javaee http://java.sun.com/xml/ns/javaee/web-app_2_5.xsd"
          id="WebApp_ID" version="2.5">
 
+ <!-- JWT Auth -->
+    <filter>
+        <filter-name>JWTAuthenticationFilter</filter-name>
+        <filter-class>org.reso.service.security.JWTAuthenticationFilter</filter-class>
+    </filter>
+    <filter-mapping>
+        <filter-name>JWTAuthenticationFilter</filter-name>
+        <url-pattern>/2.0.0/*</url-pattern>
+    </filter-mapping>
+
+    <!-- Main servlet -->
     <servlet>
         <servlet-name>RESOservlet</servlet-name>
         <servlet-class>org.reso.service.servlet.RESOservlet</servlet-class>
