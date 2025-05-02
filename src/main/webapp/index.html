@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>RESO Web API Reference Server - Multi-tenant Edition</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        line-height: 1.6;
+        margin: 0;
+        padding: 20px;
+        color: #333;
+        max-width: 1000px;
+        margin: 0 auto;
+      }
+      h1,
+      h2,
+      h3 {
+        color: #005a9c;
+      }
+      code {
+        background-color: #f4f4f4;
+        padding: 2px 4px;
+        border-radius: 4px;
+        font-family: Consolas, Monaco, "Andale Mono", monospace;
+      }
+      pre {
+        background-color: #f4f4f4;
+        padding: 15px;
+        border-radius: 4px;
+        overflow-x: auto;
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+        margin: 20px 0;
+      }
+      th,
+      td {
+        border: 1px solid #ddd;
+        padding: 10px;
+        text-align: left;
+      }
+      th {
+        background-color: #f2f2f2;
+      }
+      .note {
+        background-color: #e7f3fe;
+        border-left: 6px solid #2196f3;
+        padding: 10px;
+        margin: 20px 0;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>RESO Web API Reference Server - Multi-tenant Edition</h1>
+
+    <p>
+      Welcome to the RESO Web API Reference Server with multi-tenant support.
+      This server allows accessing multiple OData pipelines with different
+      metadata files and lookup types, all sharing the same MongoDB database.
+    </p>
+
+    <div class="note">
+      <strong>Note:</strong> This is a reference implementation, designed for
+      testing and development purposes.
+    </div>
+
+    <h2>Available Tenants</h2>
+
+    <p>The following pre-configured tenants are available:</p>
+
+    <table>
+      <tr>
+        <th>Tenant ID</th>
+        <th>Metadata File</th>
+        <th>Lookup Type</th>
+        <th>Description</th>
+      </tr>
+      <tr>
+        <td>default</td>
+        <td>RESODataDictionary-1.7.metadata-report.json</td>
+        <td>STRING</td>
+        <td>Default configuration using RESO DD 1.7 with STRING lookup type</td>
+      </tr>
+      <tr>
+        <td>dd17-string</td>
+        <td>RESODataDictionary-1.7.metadata-report.json</td>
+        <td>STRING</td>
+        <td>RESO DD 1.7 with STRING lookup type</td>
+      </tr>
+      <tr>
+        <td>dd17-enum</td>
+        <td>RESODataDictionary-1.7.metadata-report.json</td>
+        <td>ENUM_COLLECTION</td>
+        <td>RESO DD 1.7 with ENUM_COLLECTION lookup type</td>
+      </tr>
+      <tr>
+        <td>dd17-flags</td>
+        <td>RESODataDictionary-1.7.metadata-report.json</td>
+        <td>ENUM_FLAGS</td>
+        <td>RESO DD 1.7 with ENUM_FLAGS lookup type</td>
+      </tr>
+      <tr>
+        <td>dd20-string</td>
+        <td>RESODataDictionary-2.0.metadata-report.json</td>
+        <td>STRING</td>
+        <td>RESO DD 2.0 with STRING lookup type</td>
+      </tr>
+      <tr>
+        <td>dd20-enum</td>
+        <td>RESODataDictionary-2.0.metadata-report.json</td>
+        <td>ENUM_COLLECTION</td>
+        <td>RESO DD 2.0 with ENUM_COLLECTION lookup type</td>
+      </tr>
+    </table>
+
+    <h2>How to Access Tenant-Specific Endpoints</h2>
+
+    <p>You can access tenant-specific endpoints using one of these methods:</p>
+
+    <h3>1. Using the X-Tenant-ID Header</h3>
+
+    <p>Add the <code>X-Tenant-ID</code> header to your requests:</p>
+
+    <pre>
+GET /$metadata HTTP/1.1
+Host: localhost:8080
+X-Tenant-ID: dd17-enum</pre
+    >
+
+    <h3>2. Using a Subdomain</h3>
+
+    <p>
+      In a production environment with DNS configured, you can use subdomains:
+    </p>
+
+    <pre>
+GET /$metadata HTTP/1.1
+Host: dd17-enum.api.example.com</pre
+    >
+
+    <h3>3. Using the Default Tenant</h3>
+
+    <p>If no tenant ID is specified, the "default" tenant will be used:</p>
+
+    <pre>
+GET /$metadata HTTP/1.1
+Host: localhost:8080</pre
+    >
+
+    <h2>Example API Endpoints</h2>
+
+    <p>For each tenant, try accessing these endpoints:</p>
+
+    <ul>
+      <li>Metadata: <code>/$metadata</code></li>
+      <li>Service Document: <code>/</code></li>
+      <li>Property Listings: <code>/Property</code></li>
+      <li>Members: <code>/Member</code></li>
+      <li>Lookup Values: <code>/Lookup</code></li>
+    </ul>
+
+    <h2>Adding Your Own Tenant</h2>
+
+    <p>
+      To add your own tenant configuration, insert a document into the
+      <code>tenant_configs</code> collection in MongoDB:
+    </p>
+
+    <pre>
+db.tenant_configs.insertOne({
+    tenantId: "my-custom-tenant",
+    metadataFilePath: "custom-metadata.json",
+    lookupType: "STRING",
+    friendlyName: "My Custom Tenant",
+    description: "Custom tenant configuration",
+    isActive: true
+});</pre
+    >
+
+    <p>
+      After adding a new tenant configuration, you'll need to upload the
+      corresponding metadata file to the server.
+    </p>
+
+    <div class="note">
+      <strong>Note:</strong> In a production environment, you'd want to create a
+      management API for tenant configuration.
+    </div>
+
+    <h2>Technical Details</h2>
+
+    <p>This multi-tenant RESO Web API Reference Server:</p>
+
+    <ul>
+      <li>
+        Identifies the tenant from the request (header, subdomain, or path)
+      </li>
+      <li>Loads tenant-specific configuration (metadata file, lookup type)</li>
+      <li>
+        Creates tenant-specific OData handlers that are cached for performance
+      </li>
+      <li>Uses a shared MongoDB database with tenant-aware data access</li>
+    </ul>
+
+    <p>
+      All data is stored in the same MongoDB collections but can be presented
+      with different metadata models depending on the tenant.
+    </p>
+
+    <h2>Resources</h2>
+
+    <ul>
+      <li>
+        <a href="https://github.com/RESOStandards/web-api-commander"
+          >RESO Web API Commander</a
+        >
+      </li>
+      <li>
+        <a href="https://www.reso.org/data-dictionary/"
+          >RESO Data Dictionary Standard</a
+        >
+      </li>
+      <li><a href="https://www.reso.org/web-api/">RESO Web API Standard</a></li>
+    </ul>
+  </body>
+</html>
