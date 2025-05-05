@@ -7,6 +7,7 @@ import org.apache.olingo.server.api.uri.queryoption.*;
 import org.bson.Document;
 import org.reso.service.data.common.CommonDataProcessing;
 import org.reso.service.data.meta.ResourceInfo;
+import org.reso.service.data.mongodb.MongoDBManager;
 import org.reso.service.tenant.ClientContext;
 import org.reso.service.tenant.ServerConfig;
 import org.reso.service.tenant.ServersConfigurationService;
@@ -405,7 +406,8 @@ public class ExpandUtils {
       MongoCollection<Document> collection = database.getCollection(config.targetCollection);
       EntityCollection expandEntities = new EntityCollection();
 
-      try (MongoCursor<Document> cursor = collection.find(query).maxTime(5000, TimeUnit.MILLISECONDS).iterator()) {
+      boolean isLookupCollection = config.targetCollection.equals("lookup");
+      try (MongoCursor<Document> cursor = collection.find(MongoDBManager.addBaseFilters(query, isLookupCollection)).maxTime(5000, TimeUnit.MILLISECONDS).iterator()) {
          while (cursor.hasNext()) {
             Document doc = cursor.next();
             LOG.info("Found {} document: {}", navPropertyName, doc.toJson());

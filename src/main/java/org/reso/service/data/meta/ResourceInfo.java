@@ -5,29 +5,24 @@ import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoDatabase;
-import org.bson.BsonDocument;
 import org.bson.Document;
 import org.bson.conversions.Bson;
-import com.mongodb.client.MongoIterable;
 import com.mongodb.client.model.Sorts;
 import org.apache.olingo.commons.api.data.Entity;
 import org.apache.olingo.commons.api.data.EntityCollection;
-import org.apache.olingo.commons.api.data.Property;
-import org.apache.olingo.commons.api.data.ValueType;
 import org.apache.olingo.commons.api.edm.EdmEntitySet;
 import org.apache.olingo.commons.api.edm.FullQualifiedName;
 import org.apache.olingo.server.api.ODataApplicationException;
 import org.apache.olingo.server.api.uri.UriInfo;
 import org.apache.olingo.server.api.uri.UriParameter;
 import org.reso.service.data.common.CommonDataProcessing;
-import org.reso.service.servlet.RESOservlet;
+import org.reso.service.data.mongodb.MongoDBManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.sql.*;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 public class ResourceInfo {
@@ -247,11 +242,11 @@ public class ResourceInfo {
             MongoDatabase mongoDatabase = mongoClient.getDatabase("reso");
             MongoCollection<Document> collection = mongoDatabase.getCollection(this.getTableName());
             FindIterable<Document> results;
-
+            boolean isLookupCollection = this.getTableName().equals("lookup");
             if (filter != null) {
-                results = collection.find(filter).sort(sort).skip(skip).limit(limit);
+                results = collection.find(MongoDBManager.addBaseFilters(filter, isLookupCollection)).sort(sort).skip(skip).limit(limit);
             } else {
-                results = collection.find().sort(sort).skip(skip).limit(limit);
+                results = collection.find(MongoDBManager.addBaseFilters(null, isLookupCollection)).sort(sort).skip(skip).limit(limit);
             }
 
             for (Document doc : results) {
@@ -272,7 +267,8 @@ public class ResourceInfo {
         MongoClient mongoClient = getMongoClient();
         MongoDatabase mongoDatabase = mongoClient.getDatabase("reso");
         MongoCollection<Document> collection = mongoDatabase.getCollection(this.tableName);
-        FindIterable<Document> iterable = (filter == null) ? collection.find() : collection.find(filter);
+        boolean isLookupCollection = this.tableName.equals("lookup");
+        FindIterable<Document> iterable = collection.find(MongoDBManager.addBaseFilters(filter, isLookupCollection));
 
         if (sort != null) {
             iterable = iterable.sort(sort);

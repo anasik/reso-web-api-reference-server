@@ -400,8 +400,9 @@ public class CommonDataProcessing {
                   MongoCollection<Document> collection = MongoDBManager.getDatabase()
                         .getCollection(collectionName);
 
+                  boolean isLookupCollection = collectionName.equals("lookup");      
                   LOG.info("Executing find operation on collection");
-                  collection.find(query).forEach(doc -> {
+                  collection.find(MongoDBManager.addBaseFilters(query, isLookupCollection)).forEach(doc -> {
                      try {
                         LOG.info("Found media document: {}", doc.toJson());
                         Entity expandEntity = CommonDataProcessing.getEntityFromDocument(doc, expandResource);
@@ -431,7 +432,8 @@ public class CommonDataProcessing {
                   MongoCollection<Document> collection = MongoDBManager.getDatabase()
                         .getCollection(collectionName);
 
-                  collection.find(defaultQuery).forEach(doc -> {
+                  boolean isLookupCollection = collectionName.equals("lookup");
+                  collection.find(MongoDBManager.addBaseFilters(defaultQuery, isLookupCollection)).forEach(doc -> {
                      try {
                         Entity expandEntity = CommonDataProcessing.getEntityFromDocument(doc, expandResource);
                         navigationTargetEntityCollection.getEntities().add(expandEntity);
@@ -452,7 +454,8 @@ public class CommonDataProcessing {
             MongoCollection<Document> collection = MongoDBManager.getDatabase()
                   .getCollection(collectionName);
 
-            collection.find(query).forEach(doc -> {
+            boolean isLookupCollection = collectionName.equals("lookup");
+            collection.find(MongoDBManager.addBaseFilters(query, isLookupCollection)).forEach(doc -> {
                try {
                   Entity expandEntity = CommonDataProcessing.getEntityFromDocument(doc, expandResource);
                   navigationTargetEntityCollection.getEntities().add(expandEntity);

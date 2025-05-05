@@ -1,8 +1,10 @@
 package org.reso.service.tenant;
 
 import org.apache.olingo.commons.api.edmx.EdmxReference;
+import org.apache.olingo.commons.api.http.HttpMethod;
 import org.apache.olingo.server.api.OData;
 import org.apache.olingo.server.api.ODataHttpHandler;
+import org.apache.olingo.server.api.ODataRequest;
 import org.apache.olingo.server.api.ServiceMetadata;
 import org.bson.Document;
 import org.reso.service.data.GenericEntityCollectionProcessor;
@@ -21,6 +23,7 @@ import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoDatabase;
 
 import java.io.StringReader;
+import java.lang.reflect.Constructor;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -29,6 +32,7 @@ import java.util.List;
 import java.util.Map;
 
 import javax.servlet.ServletException;
+import org.reso.service.servlet.util.ClassLoader;
 
 public class ODataHandlerCache {
   private static final Logger LOG = LoggerFactory.getLogger(ODataHandlerCache.class);
@@ -112,7 +116,35 @@ public class ODataHandlerCache {
             }
           }
         }
-      } 
+      } else {
+                // Get all classes with constructors with 0 parameters
+                try {
+                    Class[] classList = ClassLoader.getClasses("org.reso.service.data.definition.custom");
+                    for (Class classProto : classList) {
+                        Constructor ctor = null;
+                        Constructor[] ctors = classProto.getDeclaredConstructors();
+                        for (int i = 0; i < ctors.length; i++) {
+                            ctor = ctors[i];
+                            if (ctor.getGenericParameterTypes().length == 0)
+                                break;
+                        }
+                        if (ctor != null) {
+                            ctor.setAccessible(true);
+                            ResourceInfo resource = (ResourceInfo) ctor.newInstance();
+                            
+                            try {
+                                resource.findMongoPrimaryKey(mongoClient);
+                                resources.add(resource);
+                                resourceLookup.put(resource.getResourceName(), resource);
+                            } catch (Exception e) {
+                                LOG.error("Error with: " + resource.getResourceName() + " - " + e.getMessage());
+                            }
+                        }
+                    }
+                } catch (Exception e) {
+                    LOG.error(e.getMessage());
+                }
+            }
 
       LookupDefinition defn = new LookupDefinition();
       try {
@@ -145,6 +177,11 @@ public class ODataHandlerCache {
         entityProcessor.addResource(resource, resource.getResourceName());
       }
 
+       ODataRequest request = new ODataRequest();
+            request.setRawODataPath("/$metadata");
+            request.setMethod(HttpMethod.GET);
+            request.setProtocol("HTTP/1.1");
+            handler.process(request);
       LOG.info("Successfully created handler for certification report {} with {} resources", serverConfig.getUniqueServerConfigName(), resources.size());
       return handler;
 

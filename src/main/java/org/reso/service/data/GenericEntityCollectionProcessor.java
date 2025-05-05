@@ -24,6 +24,7 @@ import org.reso.service.data.helper.ExpandUtils;
 import org.reso.service.data.meta.FieldInfo;
 import org.reso.service.data.meta.MongoDBFilterExpressionVisitor;
 import org.reso.service.data.meta.ResourceInfo;
+import org.reso.service.data.mongodb.MongoDBManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -230,7 +231,8 @@ public class GenericEntityCollectionProcessor implements EntityCollectionProcess
                   collection.getNamespace(),
                   filter.toJson());
 
-            FindIterable<Document> findIterable = collection.find(filter)
+            boolean isLookupCollection = collectionName.equals("lookup");
+            FindIterable<Document> findIterable = collection.find(MongoDBManager.addBaseFilters(filter, isLookupCollection))
                   .skip(skipNumber)
                   .limit(topNumber)
                   .maxTime(5000, TimeUnit.MILLISECONDS);

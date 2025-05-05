@@ -3,6 +3,13 @@ package org.reso.service.data.mongodb;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
 import com.mongodb.client.MongoDatabase;
+import com.mongodb.client.model.Filters;
+
+import org.bson.Document;
+import org.bson.conversions.Bson;
+import org.reso.service.tenant.ClientContext;
+import org.reso.service.tenant.ServerConfig;
+import org.reso.service.tenant.ServersConfigurationService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -50,4 +57,20 @@ public class MongoDBManager {
             }
         }
     }
+    public static Bson createBaseFilter(boolean isLookup) {
+      String clientId = ClientContext.getCurrentClient();
+      ServerConfig config = ServersConfigurationService.getServerConfig(clientId);
+      return isLookup 
+              ? Filters.eq("certificationReportId", config.getCertificationReportId()) 
+              : Filters.eq("sandboxServerId", config.getSandboxServerId());
+  }
+
+  public static Bson addBaseFilters(Bson customQuery, boolean isLookup) {
+    Bson baseFilter = createBaseFilter(isLookup);
+    if (customQuery == null || (customQuery instanceof Document && ((Document) customQuery).isEmpty())) {
+        return baseFilter;
+    }
+    return Filters.and(customQuery, baseFilter);
+  }
+
 }

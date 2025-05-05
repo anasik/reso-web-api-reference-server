@@ -45,7 +45,9 @@ public class EnumFieldInfo extends FieldInfo {
          try {
             MongoCollection<Document> collection = mongoClient.getDatabase("reso")
                   .getCollection(resource.getTableName());
-            MongoCursor<Document> cursor = collection.find(new Document("LookupName", lookupName)).iterator();
+                  
+            boolean isLookupCollection = resource.getTableName().equals("lookup");      
+            MongoCursor<Document> cursor = collection.find(MongoDBManager.addBaseFilters(new Document("LookupName", lookupName), isLookupCollection)).iterator();
 
             while (cursor.hasNext()) {
                Document doc = cursor.next();

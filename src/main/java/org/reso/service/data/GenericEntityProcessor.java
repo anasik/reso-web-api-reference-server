@@ -27,6 +27,7 @@ import org.bson.Document;
 import org.reso.service.data.common.CommonDataProcessing;
 import org.reso.service.data.meta.FieldInfo;
 import org.reso.service.data.meta.ResourceInfo;
+import org.reso.service.data.mongodb.MongoDBManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -251,8 +252,10 @@ public class GenericEntityProcessor implements EntityProcessor {
             MongoDatabase database = mongoClient.getDatabase("reso");
             MongoCollection<Document> collection = database.getCollection(resource.getTableName());
 
+            boolean isLookupCollection = resource.getTableName().equalsIgnoreCase("lookup");
+
             // Add a timeout to the find operation
-            Document doc = collection.find(query)
+            Document doc = collection.find(MongoDBManager.addBaseFilters(query, isLookupCollection))
                     .maxTime(5000, TimeUnit.MILLISECONDS)
                     .first();
 
@@ -266,7 +269,7 @@ public class GenericEntityProcessor implements EntityProcessor {
                     Document lookupQuery = new Document("ResourceRecordKey", resourceRecordKey);
                     try (MongoCursor<Document> lookupCursor = mongoClient.getDatabase("reso")
                             .getCollection("lookup_value")
-                            .find(lookupQuery)
+                            .find(MongoDBManager.addBaseFilters(lookupQuery, false))
                             .maxTime(5000, TimeUnit.MILLISECONDS)
                             .iterator()) {
                         HashMap<String, HashMap<String, Object>> entities = new HashMap<>();
@@ -315,7 +318,7 @@ public class GenericEntityProcessor implements EntityProcessor {
                                     expandCollection = database.getCollection("member");
                                     LOG.info("Querying member collection with filter: {}", agentQuery.toJson());
 
-                                    Document memberDoc = expandCollection.find(agentQuery)
+                                    Document memberDoc = expandCollection.find(MongoDBManager.addBaseFilters(agentQuery, false))
                                             .maxTime(5000, TimeUnit.MILLISECONDS)
                                             .first();
 
@@ -349,7 +352,7 @@ public class GenericEntityProcessor implements EntityProcessor {
                         LOG.info("Executing MongoDB query on collection {} with filter: {}",
                                 expandCollection.getNamespace().getCollectionName(), expandQuery.toJson());
 
-                        try (MongoCursor<Document> cursor = expandCollection.find(expandQuery)
+                        try (MongoCursor<Document> cursor = expandCollection.find(MongoDBManager.addBaseFilters(expandQuery, false))
                                 .maxTime(5000, TimeUnit.MILLISECONDS)
                                 .iterator()) {
                             while (cursor.hasNext()) {
@@ -479,9 +482,9 @@ public class GenericEntityProcessor implements EntityProcessor {
         String queryString = "insert into " + resource.getTableName();
         try {
             SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd"); // For SQL DATE
-
+            boolean isLookupCollection = resource.getTableName().equals("lookup");
             com.mongodb.client.MongoCursor<org.bson.Document> cursor = mongoClient.getDatabase("reso")
-                    .getCollection(resource.getTableName()).find()
+                    .getCollection(resource.getTableName()).find(MongoDBManager.addBaseFilters(null, isLookupCollection))
                     .iterator();
             ArrayList<String> columnNames = new ArrayList<>();
             ArrayList<String> columnValues = new ArrayList<>();

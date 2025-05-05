@@ -4,20 +4,16 @@ import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoCursor;
 import org.apache.olingo.commons.api.edm.EdmPrimitiveTypeKind;
-import org.apache.olingo.commons.api.edm.FullQualifiedName;
 import org.bson.Document;
-import org.reso.service.data.meta.EnumFieldInfo;
-import org.reso.service.data.meta.EnumValueInfo;
 import org.reso.service.data.meta.FieldInfo;
 import org.reso.service.data.meta.GenericResourceInfo;
+import org.reso.service.data.mongodb.MongoDBManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.sql.Connection;
 import java.util.ArrayList;
 import java.util.HashMap;
 
-import static org.reso.service.data.common.CommonDataProcessing.loadAllResource;
 
 public class LookupDefinition extends GenericResourceInfo {
    private static final Logger LOG = LoggerFactory.getLogger(LookupDefinition.class);
@@ -26,7 +22,7 @@ public class LookupDefinition extends GenericResourceInfo {
    private static HashMap<String, HashMap<String, String>> lookupCache = new HashMap<>();
    private static HashMap<String, HashMap<String, String>> reverseLookupCache = new HashMap<>();
    private static final String METADATA_DISPLAYNAME = "RESO.OData.Metadata.DisplayName";
-   private static final String LOOKUP = "lookup";
+   private static final String LOOKUP = "Lookup";
    private static final String LOOKUP_KEY = "LookupKey";
    private static final String LOOKUP_NAME = "LookupName";
    private static final String LOOKUP_VALUE = "LookupValue";
@@ -35,7 +31,7 @@ public class LookupDefinition extends GenericResourceInfo {
    private static final String MODIFICATION_TIMESTAMP = "ModificationTimestamp";
 
    public LookupDefinition() {
-      super(LOOKUP, LOOKUP);
+      super(LOOKUP, "lookup");
       // Ensure fieldList is initialized through the getStaticFieldList method
       getStaticFieldList();
    }
@@ -79,7 +75,8 @@ public class LookupDefinition extends GenericResourceInfo {
    public static void loadCache(MongoClient mongoClient, LookupDefinition defn) {
       try {
          MongoCollection<Document> collection = mongoClient.getDatabase("reso").getCollection(defn.getTableName());
-         MongoCursor<Document> cursor = collection.find().iterator();
+         boolean isLookupCollection = defn.getTableName().equals("lookup");
+         MongoCursor<Document> cursor = collection.find(MongoDBManager.addBaseFilters(null, isLookupCollection)).iterator();
 
          while (cursor.hasNext()) {
             Document doc = cursor.next();
