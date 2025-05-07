@@ -51,9 +51,9 @@ public class MongoDBFilterExpressionVisitor implements ExpressionVisitor<String>
             throws ExpressionVisitException, ODataApplicationException {
         LOG.info("Binary Operator - Kind: {}, Left: {}, Right: {}", operator, left, right);
 
-        // Remove 'property.' prefix from left and right sides
-        left = left.replace("property.", "").trim();
-        right = right.replace("property.", "").trim(); // Ensure right side is also sanitized
+        // Remove '{collectionName}.' prefix from left and right sides
+        left = left.replace(entityAlias + ".", "").trim();
+        right = right.replace(entityAlias + ".", "").trim(); // Ensure right side is also sanitized
 
         LOG.info("Sanitized Left: {}, Sanitized Right: {}", left, right); // Debug logging
 
@@ -139,57 +139,60 @@ public class MongoDBFilterExpressionVisitor implements ExpressionVisitor<String>
         }
 
         Object rightValue = right;
-        if (isEnumField) {
-            rightValue = right.substring(right.indexOf("'") + 1, right.lastIndexOf("'"));
-        }
-        try {
-            if (isIntegerField) {
-                rightValue = Long.parseLong(right.trim());
-            } else if (isDecimalField) {
-                rightValue = Double.parseDouble(right.trim());
-            } else if (isDateTimeOffsetField) {
-                right = right.trim().replace("'", "").replace("\"", "");
-                if (right.matches("^\\d+$")) { // timestamp millis
-                    rightValue = new Date(Long.parseLong(right));
-                } else {
-                    rightValue = Date.from(Instant.parse(right));
-                }
-            } else if (isDateField) {
-                right = right.trim().replace("'", "").replace("\"", "");
-                try {
-                    SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd");
-                    dateFormat.setTimeZone(TimeZone.getTimeZone("UTC"));
-                    dateFormat.setLenient(false);
-                    Date parsedDate = dateFormat.parse(right);
+        if(right == "NULL") {
+          rightValue = null;
+        } else {
+          if (isEnumField) {
+              rightValue = right.substring(right.indexOf("'") + 1, right.lastIndexOf("'"));
+          }
+          try {
+              if (isIntegerField) {
+                  rightValue = Long.parseLong(right.trim());
+              } else if (isDecimalField) {
+                  rightValue = Double.parseDouble(right.trim());
+              } else if (isDateTimeOffsetField) {
+                  right = right.trim().replace("'", "").replace("\"", "");
+                  if (right.matches("^\\d+$")) { // timestamp millis
+                      rightValue = new Date(Long.parseLong(right));
+                  } else {
+                      rightValue = Date.from(Instant.parse(right));
+                  }
+              } else if (isDateField) {
+                  right = right.trim().replace("'", "").replace("\"", "");
+                  try {
+                      SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd");
+                      dateFormat.setTimeZone(TimeZone.getTimeZone("UTC"));
+                      dateFormat.setLenient(false);
+                      Date parsedDate = dateFormat.parse(right);
 
-                    // For MongoDB queries, we need to set the time to midnight UTC
-                    Calendar cal = Calendar.getInstance(TimeZone.getTimeZone("UTC"));
-                    cal.setTime(parsedDate);
-                    cal.set(Calendar.HOUR_OF_DAY, 0);
-                    cal.set(Calendar.MINUTE, 0);
-                    cal.set(Calendar.SECOND, 0);
-                    cal.set(Calendar.MILLISECOND, 0);
-                    rightValue = cal.getTime();
+                      // For MongoDB queries, we need to set the time to midnight UTC
+                      Calendar cal = Calendar.getInstance(TimeZone.getTimeZone("UTC"));
+                      cal.setTime(parsedDate);
+                      cal.set(Calendar.HOUR_OF_DAY, 0);
+                      cal.set(Calendar.MINUTE, 0);
+                      cal.set(Calendar.SECOND, 0);
+                      cal.set(Calendar.MILLISECOND, 0);
+                      rightValue = cal.getTime();
 
-                    LOG.info("Parsed date value for MongoDB query: {}", rightValue);
-                } catch (ParseException e) {
-                    throw new ODataApplicationException(
-                            "Invalid date format for field '" + left + "'. Expected format: yyyy-MM-dd",
-                            HttpStatusCode.BAD_REQUEST.getStatusCode(),
-                            Locale.ENGLISH,
-                            e);
-                }
-            } else {
-                rightValue = right.replace("'", "").replace("\"", "");
-            }
-        } catch (Exception e) {
-            throw new ODataApplicationException(
-                    "Invalid value for field '" + left + "': " + right,
-                    HttpStatusCode.BAD_REQUEST.getStatusCode(),
-                    Locale.ENGLISH,
-                    e);
-        }
-
+                      LOG.info("Parsed date value for MongoDB query: {}", rightValue);
+                  } catch (ParseException e) {
+                      throw new ODataApplicationException(
+                              "Invalid date format for field '" + left + "'. Expected format: yyyy-MM-dd",
+                              HttpStatusCode.BAD_REQUEST.getStatusCode(),
+                              Locale.ENGLISH,
+                              e);
+                  }
+              } else {
+                  rightValue = right.replace("'", "").replace("\"", "");
+              }
+          } catch (Exception e) {
+              throw new ODataApplicationException(
+                      "Invalid value for field '" + left + "': " + right,
+                      HttpStatusCode.BAD_REQUEST.getStatusCode(),
+                      Locale.ENGLISH,
+                      e);
+          }
+        }    
         Document comparison;
         if (operator == BinaryOperatorKind.HAS) {
             if (isCollectionField) {
@@ -257,7 +260,7 @@ public class MongoDBFilterExpressionVisitor implements ExpressionVisitor<String>
     public String visitLiteral(Literal literal) throws ExpressionVisitException, ODataApplicationException {
         String literalAsString = literal.getText();
         if (literal.getType() == null) {
-            literalAsString = "NULL";
+            return "NULL";
         }
 
         // Handle both DateTimeOffset and Date types
@@ -286,7 +289,7 @@ public class MongoDBFilterExpressionVisitor implements ExpressionVisitor<String>
 
         // Debug logging for literals
         LOG.info("Processing Literal: {}", literalAsString);
-        return literalAsString.replace("property.", ""); // Remove 'property.' prefix if it exists
+        return literalAsString.replace(entityAlias + ".", ""); // Remove '{collectionName}.' prefix if it exists
     }
 
     @Override
@@ -374,7 +377,7 @@ public class MongoDBFilterExpressionVisitor implements ExpressionVisitor<String>
                         value = result.substring(result.indexOf("'") + 1, result.lastIndexOf("'"));
                     } else {
                         // For string collections, remove property. prefix and quotes
-                        value = result.replace("property.", "").trim().replace("'", "");
+                        value = result.replace(entityAlias + ".", "").trim().replace("'", "");
                     }
                     LOG.info("  Value to match: {}", value);
 
