@@ -31,13 +31,18 @@ public class LookupDefinition extends GenericResourceInfo {
    private static final String LOOKUP_NAME = "LookupName";
    private static final String LOOKUP_VALUE = "LookupValue";
    private static final String STANDARD_LOOKUP_VALUE = "StandardLookupValue";    
-   private static final String LEGACY_ODATA_VALUE = "LegacyOdataValue";
+   private static final String LEGACY_ODATA_VALUE = "LegacyODataValue";
    private static final String MODIFICATION_TIMESTAMP = "ModificationTimestamp";
 
    public LookupDefinition() {
       super(LOOKUP, LOOKUP);
       // Ensure fieldList is initialized through the getStaticFieldList method
       getStaticFieldList();
+   }
+
+   @Override
+   public void findMongoPrimaryKey(MongoClient mongoClient) {
+      this.primaryKeyName = LOOKUP_KEY;
    }
 
    public ArrayList<FieldInfo> getFieldList() {

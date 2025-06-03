@@ -191,7 +191,7 @@ These scripts:
 2. Add missing fields with standard values (3 values per field)
 3. Skip fields that already exist in the database
 4. Generate unique hash keys for each lookup value
-5. Add proper formatting for `LegacyOdataValue` fields
+5. Add proper formatting for `LegacyODataValue` fields
 6. Include `ModificationTimestamp` with current date/time
 
 ## Fields Added

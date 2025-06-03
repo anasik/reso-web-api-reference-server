@@ -14,7 +14,7 @@ const lookups = jsonData.lookups.map(({ lookupName, lookupValue, annotations }) 
         "LookupName": lookupName.split('.').pop(),
         "LookupValue": lookupValue,
         "StandardLookupValue": standardNameAnnotation ? standardNameAnnotation.value : null,
-        "LegacyOdataValue": legacyValueAnnotation ? legacyValueAnnotation.value : null,
+        "LegacyODataValue": legacyValueAnnotation ? legacyValueAnnotation.value : null,
         "ModificationTimestamp": ISODate()
     })
 })
