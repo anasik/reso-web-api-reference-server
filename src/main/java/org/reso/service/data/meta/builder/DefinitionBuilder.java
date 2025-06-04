@@ -36,7 +36,8 @@ public class DefinitionBuilder {
    private static final Map<String, Boolean> HEADER_FIELDS = Stream.of(
          new AbstractMap.SimpleEntry<>("description", true),
          new AbstractMap.SimpleEntry<>("generatedOn", true),
-         new AbstractMap.SimpleEntry<>("version", true))
+         new AbstractMap.SimpleEntry<>("version", true),
+         new AbstractMap.SimpleEntry<>("namespace", true))
          .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
 
    private static final Logger LOG = LoggerFactory.getLogger(DefinitionBuilder.class);
@@ -170,122 +171,128 @@ public class DefinitionBuilder {
             Integer scale = (Integer) field.getProperty("scale");
             Integer precision = (Integer) field.getProperty("precision");
 
-            FullQualifiedName fqn = EDM_MAP.get(fieldType);
-            if (fqn != null) {
-               if (fqn.equals(EdmPrimitiveTypeKind.Int64.getFullQualifiedName())) {
+            FullQualifiedName fqn = null;
+            if (isExpansion) {
+                fqn = new FullQualifiedName(NAMESPACE, fieldTypeName);
+                newField = new FieldInfo(fieldName, fqn);
+            } else {
+                fqn = EDM_MAP.get(fieldType);
+                if (fqn != null) {
+                    if (fqn.equals(EdmPrimitiveTypeKind.Int64.getFullQualifiedName())) {
 
-                  Object rawValue = field.getProperty("value");
-                  Long longValue = (rawValue != null) ? Long.parseLong(rawValue.toString()) : null;
-                  newField = new FieldInfo(fieldName, fqn);
+                        Object rawValue = field.getProperty("value");
+                        Long longValue = (rawValue != null) ? Long.parseLong(rawValue.toString()) : null;
+                        newField = new FieldInfo(fieldName, fqn);
 
-                  if (longValue != null) {
-                     newField.addAnnotation(longValue.toString(), "RESO.OData.Metadata.DefaultValue");
-                  }
-               } else {
-                  newField = new FieldInfo(fieldName, fqn);
-               }
-            } else if (fieldType.startsWith(EDM_ENUM)) {
-               String lookupName = fieldType.substring(EDM_ENUM.length() + 1);
-               EnumFieldInfo enumFieldInfo = new EnumFieldInfo(fieldName,
-                     EdmPrimitiveTypeKind.Int64.getFullQualifiedName());
-               enumFieldInfo.setLookupName(lookupName);
-               if (isFlags == true) {
-                  enumFieldInfo.setFlags();
-               }
-               newField = enumFieldInfo;
+                        if (longValue != null) {
+                            newField.addAnnotation(longValue.toString(), "RESO.OData.Metadata.DefaultValue");
+                        }
+                    } else {
+                        newField = new FieldInfo(fieldName, fqn);
+                    }
+                } else if (fieldType.startsWith(EDM_ENUM)) {
+                    String lookupName = fieldType.substring(EDM_ENUM.length() + 1);
+                    EnumFieldInfo enumFieldInfo = new EnumFieldInfo(fieldName,
+                            EdmPrimitiveTypeKind.Int64.getFullQualifiedName());
+                    enumFieldInfo.setLookupName(lookupName);
+                    if (isFlags == true) {
+                        enumFieldInfo.setFlags();
+                    }
+                    newField = enumFieldInfo;
 
-               ArrayList<GenericGSONobject> lookupList = lookupMap.get(fieldType);
-               Boolean isFlagsLookupType = LOOKUP_TYPE.equals("ENUM_FLAGS"); // add if statement to check if its null
+                    ArrayList<GenericGSONobject> lookupList = lookupMap.get(fieldType);
+                    Boolean isFlagsLookupType = LOOKUP_TYPE.equals("ENUM_FLAGS"); // add if statement to check if its null
 
-               boolean setFlags = (isFlagsLookupType && lookupList.size() > 1);
+                    boolean setFlags = (isFlagsLookupType && lookupList.size() > 1);
 
-               for (GenericGSONobject lookupItem : lookupList) {
-                  String enumValueString = (String) lookupItem.getProperty("lookupValue");
-                  EnumValueInfo enumValue = new EnumValueInfo(enumValueString);
+                    for (GenericGSONobject lookupItem : lookupList) {
+                        String enumValueString = (String) lookupItem.getProperty("lookupValue");
+                        EnumValueInfo enumValue = new EnumValueInfo(enumValueString);
 
-                  /**
-                   * try
-                   * {
-                   * Long enumLongValue = Long.parseLong(enumValueString);
-                   * if (enumLongValue<=0)
-                   * {
-                   * setFlags = false;
-                   * }
-                   * else
-                   * {
-                   * long hob = Long.highestOneBit(enumLongValue);
-                   * long lob = Long.lowestOneBit(enumLongValue);
-                   * setFlags = (hob==lob);
-                   * }
-                   * }
-                   * catch (Exception e)
-                   * {
-                   * setFlags = false;
-                   * }
-                   * /
-                   **/
+                        /**
+                         * try
+                         * {
+                         * Long enumLongValue = Long.parseLong(enumValueString);
+                         * if (enumLongValue<=0)
+                         * {
+                         * setFlags = false;
+                         * }
+                         * else
+                         * {
+                         * long hob = Long.highestOneBit(enumLongValue);
+                         * long lob = Long.lowestOneBit(enumLongValue);
+                         * setFlags = (hob==lob);
+                         * }
+                         * }
+                         * catch (Exception e)
+                         * {
+                         * setFlags = false;
+                         * }
+                         * /
+                         **/
 
-                  ArrayList<AnnotationObject> annotations = null;
-                  if (lookupItem.getClass().equals(LookupObject.class)) {
-                     annotations = ((LookupObject) lookupItem).getAnnotations();
-                  }
-                  if (annotations != null) {
-                     for (AnnotationObject annotation : annotations) {
-                        enumValue.addAnnotation((String) annotation.getProperty("value"),
-                              (String) annotation.getProperty("term"));
-                     }
-                  }
+                        ArrayList<AnnotationObject> annotations = null;
+                        if (lookupItem.getClass().equals(LookupObject.class)) {
+                            annotations = ((LookupObject) lookupItem).getAnnotations();
+                        }
+                        if (annotations != null) {
+                            for (AnnotationObject annotation : annotations) {
+                                enumValue.addAnnotation((String) annotation.getProperty("value"),
+                                        (String) annotation.getProperty("term"));
+                            }
+                        }
 
-                  enumFieldInfo.addValue(enumValue);
-               }
+                        enumFieldInfo.addValue(enumValue);
+                    }
 
-               if (setFlags) {
-                  LOG.info("DEBUG: setFlags is " + setFlags);
-                  enumFieldInfo.setFlags();
-               }
+                    if (setFlags) {
+                        LOG.info("DEBUG: setFlags is " + setFlags);
+                        enumFieldInfo.setFlags();
+                    }
 
-            } else if (fieldType.startsWith(NAMESPACE)) {
-               newField = new FieldInfo(fieldName, new FullQualifiedName(NAMESPACE, fieldTypeName));
+                } else if (fieldType.startsWith(NAMESPACE)) {
+                    newField = new FieldInfo(fieldName, new FullQualifiedName(NAMESPACE, fieldTypeName));
+                }
             }
 
             if (newField != null) {
-               if (maxLength != null) {
-                  newField.setMaxLength(maxLength);
-               }
-               if (scale != null) {
-                  newField.setScale(scale);
-               }
-               if (precision != null) {
-                  newField.setPrecision(precision);
-               }
+                if (maxLength != null) {
+                    newField.setMaxLength(maxLength);
+                }
+                if (scale != null) {
+                    newField.setScale(scale);
+                }
+                if (precision != null) {
+                    newField.setPrecision(precision);
+                }
 
-               ArrayList<AnnotationObject> annotations = null;
-               if (field.getClass().equals(FieldObject.class)) {
-                  annotations = ((FieldObject) field).getAnnotations();
-               }
-               if (annotations != null) {
-                  for (AnnotationObject annotation : annotations) {
-                     newField.addAnnotation((String) annotation.getProperty("value"),
-                           (String) annotation.getProperty("term"));
-                  }
-               }
-               if (isCollection == true) {
-                  newField.setCollection();
-               }
-               if (isExpansion == true) {
-                  newField.setExpansion();
-               }
-               // In cases where we have EnumType metadata being used in a String LookupType
-               // server, we must add LookupName annotations
-               if (LOOKUP_TYPE.equals("STRING") && fieldType.equals("Edm.Int64")) {
-                  newField.addAnnotation("Edm.String", "RESO.OData.Metadata.LookupName");
-               }
+                ArrayList<AnnotationObject> annotations = null;
+                if (field.getClass().equals(FieldObject.class)) {
+                    annotations = ((FieldObject) field).getAnnotations();
+                }
+                if (annotations != null) {
+                    for (AnnotationObject annotation : annotations) {
+                        newField.addAnnotation((String) annotation.getProperty("value"),
+                                (String) annotation.getProperty("term"));
+                    }
+                }
+                if (isCollection == true) {
+                    newField.setCollection();
+                }
+                if (isExpansion == true) {
+                    newField.setExpansion();
+                }
+                // In cases where we have EnumType metadata being used in a String LookupType
+                // server, we must add LookupName annotations
+                if (LOOKUP_TYPE.equals("STRING") && fieldType.equals("Edm.Int64")) {
+                    newField.addAnnotation("Edm.String", "RESO.OData.Metadata.LookupName");
+                }
 
-               if (LOOKUP_TYPE.equals("STRING") && fieldType.equals("Edm.String") && fieldTypeName != null
-                     && !fieldTypeName.isEmpty()) {
-                  newField.addAnnotation(fieldTypeName, "RESO.OData.Metadata.LookupName");
-               }
-               fieldList.add(newField);
+                if (LOOKUP_TYPE.equals("STRING") && fieldType.equals("Edm.String") && fieldTypeName != null
+                        && !fieldTypeName.isEmpty()) {
+                    newField.addAnnotation(fieldTypeName, "RESO.OData.Metadata.LookupName");
+                }
+                fieldList.add(newField);
             }
 
          }

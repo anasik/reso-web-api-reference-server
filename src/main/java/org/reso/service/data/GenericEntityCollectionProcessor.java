@@ -42,6 +42,25 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class GenericEntityCollectionProcessor implements EntityCollectionProcessor {
+  // Inner class to hold both EntityCollection and total count
+   static class DataResult {
+      private final EntityCollection entityCollection;
+      private final int totalCount;
+      
+      public DataResult(EntityCollection entityCollection, int totalCount) {
+         this.entityCollection = entityCollection;
+         this.totalCount = totalCount;
+      }
+      
+      public EntityCollection getEntityCollection() {
+         return entityCollection;
+      }
+      
+      public int getTotalCount() {
+         return totalCount;
+      }
+   }
+
    private OData odata;
    private ServiceMetadata serviceMetadata;
    private final MongoClient mongoClient;
@@ -50,7 +69,7 @@ public class GenericEntityCollectionProcessor implements EntityCollectionProcess
    private ExpandUtils expandUtils;
    HashMap<String, ResourceInfo> resourceList = null;
    private static final Logger LOG = LoggerFactory.getLogger(GenericEntityCollectionProcessor.class);
-   private static final int PAGE_SIZE = 100;
+   private static final int PAGE_SIZE = 10;
 
    public GenericEntityCollectionProcessor(MongoClient mongoClient) {
       this.mongoClient = mongoClient;
@@ -109,11 +128,14 @@ public class GenericEntityCollectionProcessor implements EntityCollectionProcess
       // 2nd: fetch the data from backend for this requested EntitySetName
       // it has to be delivered as EntitySet object
       EntityCollection entitySet;
+      int totalCount = 0; // Always get total count for pagination logic
 
       if (resource.useCustomDatasource()) {
          entitySet = resource.getData(edmEntitySet, uriInfo, isCount);
       } else {
-         entitySet = getData(edmEntitySet, uriInfo, isCount, resource);
+         DataResult dataResult = getData(edmEntitySet, uriInfo, isCount, resource);
+         entitySet = dataResult.getEntityCollection();
+         totalCount = dataResult.getTotalCount();
       }
 
       TopOption topOption = uriInfo.getTopOption();
@@ -123,7 +145,10 @@ public class GenericEntityCollectionProcessor implements EntityCollectionProcess
 
       // 3rd: create a serializer based on the requested format (json)
       try {
-         entitySet.setNext(new URI(modifyUrl(request.getRawRequestUri(), topNumber, skipNumber + topNumber)));
+        // Only add next link if there are more records to fetch
+         if (!resource.useCustomDatasource() && (skipNumber + topNumber) < totalCount) {
+            entitySet.setNext(new URI(modifyUrl(request.getRawRequestUri(), topNumber, skipNumber + topNumber)));
+         }
          uriInfo.asUriInfoAll().getFormatOption().getFormat(); // If Format is given, then we will use what it has.
       } catch (Exception e) {
          responseFormat = ContentType.JSON; // If format is not set in the $format, then use JSON.
@@ -152,6 +177,7 @@ public class GenericEntityCollectionProcessor implements EntityCollectionProcess
                .contextURL(contextUrl)
                .id(id)
                .count(countOption)
+               .select(selectOption).expand(expandOption)
                .build();
       } else {
          if (selectOption != null) {
@@ -173,7 +199,7 @@ public class GenericEntityCollectionProcessor implements EntityCollectionProcess
       response.setHeader(HttpHeader.CONTENT_TYPE, responseFormat.toContentTypeString());
    }
 
-   protected EntityCollection getData(EdmEntitySet edmEntitySet, UriInfo uriInfo, boolean isCount,
+   protected DataResult getData(EdmEntitySet edmEntitySet, UriInfo uriInfo, boolean isCount,
          ResourceInfo resource) throws ODataApplicationException {
       String dbType = getDatabaseType();
       if ("mongodb".equals(dbType)) {
@@ -183,9 +209,10 @@ public class GenericEntityCollectionProcessor implements EntityCollectionProcess
       }
    }
 
-   protected EntityCollection getDataFromMongo(EdmEntitySet edmEntitySet, UriInfo uriInfo, boolean isCount,
+   protected DataResult getDataFromMongo(EdmEntitySet edmEntitySet, UriInfo uriInfo, boolean isCount,
          ResourceInfo resource) throws ODataApplicationException {
       EntityCollection dataCollection = new EntityCollection();
+      int totalCount = 0;
 
       try {
          // Log MongoDB client state
@@ -209,10 +236,50 @@ public class GenericEntityCollectionProcessor implements EntityCollectionProcess
 
          LOG.info("Pagination - top: {}, skip: {}", topNumber, skipNumber);
 
+          // Always get total count for pagination logic
+         totalCount = resource.executeMongoCount(filter);
+         LOG.info("Total count: {}", totalCount);
+
+         // Only set count in response if requested
          if (isCount) {
-            int count = resource.executeMongoCount(filter);
-            dataCollection.setCount(count);
-            LOG.info("Count query result: {}", count);
+             dataCollection.setCount(totalCount);
+             LOG.info("Count query result: {}", totalCount);
+         } else {
+            // Get the base data collection
+            MongoDatabase database = mongoClient.getDatabase("reso");
+            String collectionName = resource.getTableName().toLowerCase();
+            LOG.info("Attempting to access collection: {}", collectionName);
+
+            // List all collections in the database
+            LOG.info("Available collections in database:");
+            database.listCollectionNames().into(new ArrayList<>()).forEach(name -> LOG.info("- Collection: {}", name));
+
+            MongoCollection<Document> collection = database.getCollection(collectionName);
+            LOG.info("Collection stats: count={}", collection.countDocuments());
+
+            LOG.info("Executing MongoDB query on collection: {} with filter: {}",
+                  collection.getNamespace(),
+                  filter.toJson());
+
+            FindIterable<Document> findIterable = collection.find(filter)
+                  .skip(skipNumber)
+                  .limit(topNumber)
+                  .maxTime(5000, TimeUnit.MILLISECONDS);
+
+            // Execute query and build collection
+            try (MongoCursor<Document> cursor = findIterable.iterator()) {
+               int documentCount = 0;
+               while (cursor.hasNext()) {
+                  Document doc = cursor.next();
+                  documentCount++;
+                  LOG.info("Found document {}: {}", documentCount, doc.toJson());
+                  Entity entity = CommonDataProcessing.getEntityFromDocument(doc, resource);
+                  dataCollection.getEntities().add(entity);
+               }
+               LOG.info("Total documents processed: {}", documentCount);
+            }
+
+            LOG.info("Retrieved {} documents from MongoDB", dataCollection.getEntities().size());
          }
 
         // Get the base data collection
@@ -263,15 +330,17 @@ public class GenericEntityCollectionProcessor implements EntityCollectionProcess
                HttpStatusCode.INTERNAL_SERVER_ERROR.getStatusCode(), Locale.ENGLISH);
       }
 
-      return dataCollection;
+      return new DataResult(dataCollection, totalCount);
    }
 
-   protected EntityCollection getDataFromSQL(EdmEntitySet edmEntitySet, UriInfo uriInfo, boolean isCount,
+protected DataResult getDataFromSQL(EdmEntitySet edmEntitySet, UriInfo uriInfo, boolean isCount,
          ResourceInfo resource) throws ODataApplicationException {
       ArrayList<FieldInfo> fields = resource.getFieldList();
       EntityCollection entCollection = new EntityCollection();
       List<Entity> productList = entCollection.getEntities();
       Bson mongoCriteria = null;
+      int totalCount = 0;
+      
       try {
          String primaryFieldName = resource.getPrimaryKeyName();
          FilterOption filter = uriInfo.getFilterOption();
@@ -290,11 +359,26 @@ public class GenericEntityCollectionProcessor implements EntityCollectionProcess
          String queryString = null;
          LOG.info("Detected Database Type: " + getDatabaseType());
 
-         if (isCount) {
-            queryString = "SELECT count(*) AS rowcount FROM " + resource.getTableName();
-         } else {
-            queryString = "SELECT * FROM " + resource.getTableName();
+         // Always get total count first
+         String countQuery = "SELECT count(*) AS rowcount FROM " + resource.getTableName();
+         if (sqlCriteria != null && !sqlCriteria.isEmpty()) {
+            countQuery += " WHERE " + sqlCriteria;
          }
+         
+         ResultSet countResult = statement.executeQuery(countQuery);
+         if (countResult.next()) {
+            totalCount = countResult.getInt("rowcount");
+         }
+         countResult.close();
+         LOG.info("Total count: {}", totalCount);
+
+         // Set count in response if requested
+         if (isCount) {
+            entCollection.setCount(totalCount);
+         }
+
+         // Now get the actual data
+         queryString = "SELECT * FROM " + resource.getTableName();
 
          // SelectOption selectOption = uriInfo.getSelectOption();
 
@@ -302,7 +386,7 @@ public class GenericEntityCollectionProcessor implements EntityCollectionProcess
             queryString += " WHERE " + sqlCriteria;
          }
 
-         LOG.info("Executing query in MongoDB...");
+         LOG.info("Executing query in SQL...");
 
          // Pagination logic: Ensure LIMIT is only added when it's > 0
          TopOption topOption = uriInfo.getTopOption();
@@ -353,24 +437,15 @@ public class GenericEntityCollectionProcessor implements EntityCollectionProcess
 
          while (resultSet.next()) {
             Entity ent = CommonDataProcessing.getEntityFromRow(resultSet, resource, selectLookup);
-
-            if (isCount) {
-               int size = resultSet.getInt("rowcount");
-               LOG.debug("Size = " + size);
-               entCollection.setCount(size);
-            }
-
             productList.add(ent);
          }
          statement.close();
-      } catch (
-
-      Exception e) {
+      } catch (Exception e) {
          LOG.error("Server Error occurred in reading " + resource.getResourceName(), e);
-         return entCollection;
+         return new DataResult(entCollection, totalCount);
       }
 
-      return entCollection;
+      return new DataResult(entCollection, totalCount);
    }
 
    private static String modifyUrl(String url, Integer topValue, Integer skipValue) {

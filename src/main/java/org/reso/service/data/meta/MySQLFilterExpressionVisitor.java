@@ -70,7 +70,7 @@ public class MySQLFilterExpressionVisitor implements ExpressionVisitor<String> {
             FieldInfo field = resourceInfo.getFieldList().stream()
                     .filter(fieldInfo -> fieldInfo.getFieldName().equals(parts[1])).findFirst().get();
             boolean isSingle = !field.isCollection() && !field.isFlags();
-            String unformatted = " EXISTS (SELECT 1 FROM lookup_value AS v JOIN lookup AS l ON l.LookupKey = v.LookupKey WHERE v.FieldName = 'COLUMN_NAME' AND v.ResourceRecordKey = TABLE_NAME.PRIMARY_KEY_NAME AND l.LegacyOdataValue = "
+            String unformatted = " EXISTS (SELECT 1 FROM lookup_value AS v JOIN lookup AS l ON l.LookupKey = v.LookupKey WHERE v.FieldName = 'COLUMN_NAME' AND v.ResourceRecordKey = TABLE_NAME.PRIMARY_KEY_NAME AND l.LegacyODataValue = "
                     + right + ")";
             return unformatted.replaceAll("COLUMN_NAME", parts[1]).replaceAll("TABLE_NAME", parts[0])
                     .replaceAll("PRIMARY_KEY_NAME", resourceInfo.getPrimaryKeyName());
@@ -206,7 +206,7 @@ public class MySQLFilterExpressionVisitor implements ExpressionVisitor<String> {
                         + n + " value " + x + ")";
         }
         return n + " EXISTS (SELECT 1 FROM lookup_value AS v JOIN lookup AS l ON l.LookupKey = v.LookupKey WHERE v.FieldName = 'COLUMN_NAME' AND v.ResourceRecordKey = TABLE_NAME.PRIMARY_KEY_NAME AND "
-                + n + " l.LegacyOdataValue " + x + ")";
+                + n + " l.LegacyODataValue " + x + ")";
     }
 
     @Override

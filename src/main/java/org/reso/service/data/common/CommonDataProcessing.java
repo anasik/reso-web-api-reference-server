@@ -230,7 +230,7 @@ public class CommonDataProcessing {
       HashMap<String, String> lookup = lookupCache.get(lookupValue);
 
       if (lookup != null) {
-         String legacyValue = lookup.get("LegacyOdataValue");
+         String legacyValue = lookup.get("LegacyODataValue");
          if (legacyValue != null) {
             enumValues.put(fieldName, legacyValue);
          }
@@ -552,7 +552,7 @@ public class CommonDataProcessing {
             return value;
          }
 
-         return lookup.get("LegacyOdataValue");
+         return lookup.get("LegacyODataValue");
       }
 
       // Handle Edm.Date type fields
@@ -632,7 +632,7 @@ public class CommonDataProcessing {
       HashMap<String, String> lookup = lookupCache.get(lookupValue);
 
       if (lookup != null) {
-         String legacyValue = lookup.get("LegacyOdataValue");
+         String legacyValue = lookup.get("LegacyODataValue");
          if (legacyValue != null) {
             enumValues.put(fieldName, legacyValue);
          }
