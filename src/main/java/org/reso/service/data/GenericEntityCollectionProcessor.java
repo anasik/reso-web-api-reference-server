@@ -282,6 +282,42 @@ public class GenericEntityCollectionProcessor implements EntityCollectionProcess
             LOG.info("Retrieved {} documents from MongoDB", dataCollection.getEntities().size());
          }
 
+        // Get the base data collection
+        MongoDatabase database = mongoClient.getDatabase("reso");
+        String collectionName = resource.getTableName().toLowerCase();
+        LOG.info("Attempting to access collection: {}", collectionName);
+
+        // List all collections in the database
+        LOG.info("Available collections in database:");
+        database.listCollectionNames().into(new ArrayList<>()).forEach(name -> LOG.info("- Collection: {}", name));
+
+        MongoCollection<Document> collection = database.getCollection(collectionName);
+        LOG.info("Collection stats: count={}", collection.countDocuments());
+
+        LOG.info("Executing MongoDB query on collection: {} with filter: {}",
+              collection.getNamespace(),
+              filter.toJson());
+
+        FindIterable<Document> findIterable = collection.find(filter)
+              .skip(skipNumber)
+              .limit(topNumber)
+              .maxTime(5000, TimeUnit.MILLISECONDS);
+
+        // Execute query and build collection
+        try (MongoCursor<Document> cursor = findIterable.iterator()) {
+           int documentCount = 0;
+           while (cursor.hasNext()) {
+              Document doc = cursor.next();
+              documentCount++;
+              LOG.info("Found document {}: {}", documentCount, doc.toJson());
+              Entity entity = CommonDataProcessing.getEntityFromDocument(doc, resource);
+              dataCollection.getEntities().add(entity);
+           }
+           LOG.info("Total documents processed: {}", documentCount);
+        }
+
+        LOG.info("Retrieved {} documents from MongoDB", dataCollection.getEntities().size());
+
          // Handle $expand if present
          ExpandOption expandOption = uriInfo.getExpandOption();
          if (expandOption != null && !dataCollection.getEntities().isEmpty()) {
