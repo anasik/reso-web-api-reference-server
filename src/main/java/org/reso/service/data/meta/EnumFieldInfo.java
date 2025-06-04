@@ -122,14 +122,13 @@ public class EnumFieldInfo extends FieldInfo {
       Object value = valueLookup.get(enumStringValue);
       if (value == null) {
          long bitValue = 1;
-         long gitValue = 0;
-         for (EnumValueInfo val : values) {
+         for (int i = 0; i < values.size(); i++) {
+            EnumValueInfo val = values.get(i);
             if (isFlags) {
-               valueLookup.put(val.getValue(), bitValue);
-               bitValue = bitValue * 2;
+              valueLookup.put(val.getValue(), bitValue);
+              bitValue *= 2;
             } else {
-               valueLookup.put(val.getValue(), gitValue);
-               gitValue = gitValue + 1;
+              valueLookup.put(val.getValue(), (long) i);
             }
          }
          value = valueLookup.get(enumStringValue);

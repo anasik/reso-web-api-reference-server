@@ -204,20 +204,20 @@ public class GenericEntityProcessor implements EntityProcessor {
 
     protected Entity getData(EdmEntitySet edmEntitySet, List<UriParameter> keyPredicates, ResourceInfo resource,
             UriInfo uriInfo) {
-        Entity product = null;
+        Entity entity = null;
         String dbType = System.getenv().getOrDefault("DB_TYPE", "mongodb").toLowerCase();
 
         try {
             if (dbType.equals("mongodb")) {
-                product = getDataFromMongo(resource, keyPredicates, uriInfo);
+                entity = getDataFromMongo(resource, keyPredicates, uriInfo);
             } else {
-                product = getDataFromSQL(resource, keyPredicates, uriInfo);
+                entity = getDataFromSQL(resource, keyPredicates, uriInfo);
             }
         } catch (Exception e) {
             LOG.error("Server Error occurred in reading " + resource.getResourceName(), e);
         }
 
-        return product;
+        return entity;
     }
 
     private Entity getDataFromMongo(ResourceInfo resource, List<UriParameter> keyPredicates, UriInfo uriInfo) {
@@ -243,7 +243,7 @@ public class GenericEntityProcessor implements EntityProcessor {
 
         List<FieldInfo> enumFields = CommonDataProcessing.gatherEnumFields(resource);
         HashMap<String, Object> enumValues = new HashMap<>();
-        Entity product = null;
+        Entity entity = null;
 
         Document query = new Document();
         if (keyPredicates != null) {
@@ -270,7 +270,7 @@ public class GenericEntityProcessor implements EntityProcessor {
 
             if (doc != null) {
                 LOG.info("Found main document: {}", doc.toJson());
-                product = CommonDataProcessing.getEntityFromDocument(doc, resource);
+                entity = CommonDataProcessing.getEntityFromDocument(doc, resource);
                 String resourceRecordKey = doc.getString(primaryFieldName);
                 LOG.info("Resource Record Key: {}", resourceRecordKey);
 
@@ -288,7 +288,7 @@ public class GenericEntityProcessor implements EntityProcessor {
                             Document lookupDoc = lookupCursor.next();
                             CommonDataProcessing.getEntityValues(lookupDoc, entities, enumFields);
                         }
-                        CommonDataProcessing.setEntityEnums(enumValues, product, enumFields);
+                        CommonDataProcessing.setEntityEnums(enumValues, entity, enumFields);
                     }
                 }
 
@@ -318,7 +318,7 @@ public class GenericEntityProcessor implements EntityProcessor {
                                 expandCollection = database.getCollection("media");
                                 break;
                             case "ListAgent":
-                                Property listAgentKeyProp = product.getProperty("ListAgentKey");
+                                Property listAgentKeyProp = entity.getProperty("ListAgentKey");
                                 if (listAgentKeyProp != null && listAgentKeyProp.getValue() != null) {
                                     String listAgentKey = listAgentKeyProp.getValue().toString();
                                     LOG.info("Found ListAgentKey: {}", listAgentKey);
@@ -341,7 +341,7 @@ public class GenericEntityProcessor implements EntityProcessor {
                                             link.setTitle("ListAgent");
                                             link.setType(Constants.ENTITY_NAVIGATION_LINK_TYPE);
                                             link.setInlineEntity(memberEntity);
-                                            product.getNavigationLinks().add(link);
+                                            entity.getNavigationLinks().add(link);
                                             LOG.info("Added ListAgent link to property");
                                         } else {
                                             LOG.error("Member resource definition not found in resourceLookup");
@@ -383,7 +383,7 @@ public class GenericEntityProcessor implements EntityProcessor {
                         } else {
                             LOG.warn("No {} entities found for property {}", navigationName, resourceRecordKey);
                         }
-                        product.getNavigationLinks().add(link);
+                        entity.getNavigationLinks().add(link);
                     }
                 }
             } else {
@@ -394,11 +394,11 @@ public class GenericEntityProcessor implements EntityProcessor {
             e.printStackTrace();
         }
 
-        return product;
+        return entity;
     }
 
     private Entity getDataFromSQL(ResourceInfo resource, List<UriParameter> keyPredicates, UriInfo uriInfo) {
-        Entity product = null;
+        Entity entity = null;
         try (Connection connection = getMySQLConnection()) {
             String primaryFieldName = resource.getPrimaryKeyName();
             List<FieldInfo> enumFields = CommonDataProcessing.gatherEnumFields(resource);
@@ -422,7 +422,7 @@ public class GenericEntityProcessor implements EntityProcessor {
                     ResultSet resultSet = statement.executeQuery(queryBuilder.toString())) {
 
                 if (resultSet.next()) {
-                    product = CommonDataProcessing.getEntityFromRow(resultSet, resource, null);
+                    entity = CommonDataProcessing.getEntityFromRow(resultSet, resource, null);
                     String resourceRecordKey = resultSet.getString(primaryFieldName);
 
                     if (!enumFields.isEmpty()) {
@@ -437,7 +437,7 @@ public class GenericEntityProcessor implements EntityProcessor {
                             while (enumResultSet.next()) {
                                 CommonDataProcessing.getEntityValues(enumResultSet, entities, enumFields);
                             }
-                            CommonDataProcessing.setEntityEnums(enumValues, product, enumFields);
+                            CommonDataProcessing.setEntityEnums(enumValues, entity, enumFields);
                         }
                     }
 
@@ -449,13 +449,13 @@ public class GenericEntityProcessor implements EntityProcessor {
                                 UriResourceNavigation expandNavigation = (UriResourceNavigation) expandPath;
                                 EdmNavigationProperty edmNavigationProperty = expandNavigation.getProperty();
                                 EntityCollection expandEntities = CommonDataProcessing.getExpandEntityCollection(
-                                        connection, edmNavigationProperty, product, resource, resourceRecordKey);
+                                        connection, edmNavigationProperty, entity, resource, resourceRecordKey);
 
                                 Link link = new Link();
                                 link.setTitle(edmNavigationProperty.getName());
                                 link.setType(Constants.ENTITY_NAVIGATION_LINK_TYPE);
                                 link.setInlineEntitySet(expandEntities);
-                                product.getNavigationLinks().add(link);
+                                entity.getNavigationLinks().add(link);
                             }
                         }
                     }
@@ -464,7 +464,7 @@ public class GenericEntityProcessor implements EntityProcessor {
         } catch (Exception e) {
             LOG.error("Error querying SQL database: " + e.getMessage(), e);
         }
-        return product;
+        return entity;
     }
 
     private URI createId(String entitySetName, Object id) {

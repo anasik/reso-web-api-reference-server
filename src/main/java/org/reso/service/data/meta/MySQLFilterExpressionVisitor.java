@@ -70,7 +70,7 @@ public class MySQLFilterExpressionVisitor implements ExpressionVisitor<String> {
             FieldInfo field = resourceInfo.getFieldList().stream()
                     .filter(fieldInfo -> fieldInfo.getFieldName().equals(parts[1])).findFirst().get();
             boolean isSingle = !field.isCollection() && !field.isFlags();
-            String unformatted = " EXISTS (SELECT 1 FROM lookup_value AS v JOIN lookup AS l ON l.LookupKey = v.LookupKey WHERE v.FieldName = 'COLUMN_NAME' AND v.ResourceRecordKey = TABLE_NAME.PRIMARY_KEY_NAME AND l.LegacyODataValue = "
+            String unformatted = " EXISTS (SELECT 1 FROM lookup_value AS v JOIN lookup AS l ON l.LookupKey = v.LookupKey WHERE v.FieldName = 'COLUMN_NAME' AND v.ResourceRecordKey = TABLE_NAME.PRIMARY_KEY_NAME AND l.LegacyOdataValue = "
                     + right + ")";
             return unformatted.replaceAll("COLUMN_NAME", parts[1]).replaceAll("TABLE_NAME", parts[0])
                     .replaceAll("PRIMARY_KEY_NAME", resourceInfo.getPrimaryKeyName());
@@ -108,23 +108,26 @@ public class MySQLFilterExpressionVisitor implements ExpressionVisitor<String> {
         if (parameters.isEmpty() && methodCall.equals(MethodKind.NOW)) {
             return "CURRENT_DATE";
         }
-        String firsEntityParam = parameters.get(0);
+        String firstEntityParam = parameters.get(0);
+        String secondEntityParam = parameters.size() > 1 ? extractFromStringValue(parameters.get(1)) : null;
+
         switch (methodCall) {
             case CONTAINS:
-                return firsEntityParam + " LIKE '%" + extractFromStringValue(parameters.get(1)) + "%'";
+                return String.format("%s LIKE '%%%s%%'", firstEntityParam, secondEntityParam);
             case STARTSWITH:
-                return firsEntityParam + " LIKE '" + extractFromStringValue(parameters.get(1)) + "%'";
+                return String.format("%s LIKE '%s%%'", firstEntityParam, secondEntityParam);
             case ENDSWITH:
-                return firsEntityParam + " LIKE '%" + extractFromStringValue(parameters.get(1)) + "'";
+                return String.format("%s LIKE '%%%s'", firstEntityParam, secondEntityParam);
             case DAY:
-                return "DAY(" + firsEntityParam + ")";
+                return String.format("DAY(%s)", firstEntityParam);
             case MONTH:
-                return "MONTH(" + firsEntityParam + ")";
+                return String.format("MONTH(%s)", firstEntityParam);
             case YEAR:
-                return "YEAR(" + firsEntityParam + ")";
+                return String.format("YEAR(%s)", firstEntityParam);
+            default:
+                throw new ODataApplicationException("Method call " + methodCall + " not implemented",
+                    HttpStatusCode.NOT_IMPLEMENTED.getStatusCode(), Locale.ENGLISH);
         }
-        throw new ODataApplicationException("Method call " + methodCall + " not implemented",
-                HttpStatusCode.NOT_IMPLEMENTED.getStatusCode(), Locale.ENGLISH);
     }
 
     @Override
@@ -206,7 +209,7 @@ public class MySQLFilterExpressionVisitor implements ExpressionVisitor<String> {
                         + n + " value " + x + ")";
         }
         return n + " EXISTS (SELECT 1 FROM lookup_value AS v JOIN lookup AS l ON l.LookupKey = v.LookupKey WHERE v.FieldName = 'COLUMN_NAME' AND v.ResourceRecordKey = TABLE_NAME.PRIMARY_KEY_NAME AND "
-                + n + " l.LegacyODataValue " + x + ")";
+                + n + " l.LegacyOdataValue " + x + ")";
     }
 
     @Override

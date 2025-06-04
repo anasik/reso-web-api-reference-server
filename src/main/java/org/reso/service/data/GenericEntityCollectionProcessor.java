@@ -337,7 +337,7 @@ protected DataResult getDataFromSQL(EdmEntitySet edmEntitySet, UriInfo uriInfo, 
          ResourceInfo resource) throws ODataApplicationException {
       ArrayList<FieldInfo> fields = resource.getFieldList();
       EntityCollection entCollection = new EntityCollection();
-      List<Entity> productList = entCollection.getEntities();
+      List<Entity> entityList = entCollection.getEntities();
       Bson mongoCriteria = null;
       int totalCount = 0;
       
@@ -398,7 +398,7 @@ protected DataResult getDataFromSQL(EdmEntitySet edmEntitySet, UriInfo uriInfo, 
          LOG.debug("Top: " + topNumber + ", Skip: " + skipNumber);
 
          OrderByOption orderByOption = uriInfo.getOrderByOption();
-         if (orderByOption != null) {
+         if (orderByOption != null && orderByOption.getOrders() != null && !orderByOption.getOrders().isEmpty()) {
             List<OrderByItem> orderItemList = orderByOption.getOrders();
             final OrderByItem orderByItem = orderItemList.get(0);
             Expression expression = orderByItem.getExpression();
@@ -437,7 +437,7 @@ protected DataResult getDataFromSQL(EdmEntitySet edmEntitySet, UriInfo uriInfo, 
 
          while (resultSet.next()) {
             Entity ent = CommonDataProcessing.getEntityFromRow(resultSet, resource, selectLookup);
-            productList.add(ent);
+            entityList.add(ent);
          }
          statement.close();
       } catch (Exception e) {
