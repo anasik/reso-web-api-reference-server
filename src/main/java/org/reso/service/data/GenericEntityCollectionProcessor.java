@@ -270,7 +270,7 @@ public class GenericEntityCollectionProcessor implements EntityCollectionProcess
          ResourceInfo resource) throws ODataApplicationException {
       ArrayList<FieldInfo> fields = resource.getFieldList();
       EntityCollection entCollection = new EntityCollection();
-      List<Entity> productList = entCollection.getEntities();
+      List<Entity> entityList = entCollection.getEntities();
       Bson mongoCriteria = null;
       try {
          String primaryFieldName = resource.getPrimaryKeyName();
@@ -314,7 +314,7 @@ public class GenericEntityCollectionProcessor implements EntityCollectionProcess
          LOG.debug("Top: " + topNumber + ", Skip: " + skipNumber);
 
          OrderByOption orderByOption = uriInfo.getOrderByOption();
-         if (orderByOption != null) {
+         if (orderByOption != null && orderByOption.getOrders() != null && !orderByOption.getOrders().isEmpty()) {
             List<OrderByItem> orderItemList = orderByOption.getOrders();
             final OrderByItem orderByItem = orderItemList.get(0);
             Expression expression = orderByItem.getExpression();
@@ -360,7 +360,7 @@ public class GenericEntityCollectionProcessor implements EntityCollectionProcess
                entCollection.setCount(size);
             }
 
-            productList.add(ent);
+            entityList.add(ent);
          }
          statement.close();
       } catch (

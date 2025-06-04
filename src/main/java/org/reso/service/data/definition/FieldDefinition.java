@@ -91,7 +91,7 @@ public class FieldDefinition extends ResourceInfo {
    public EntityCollection getData(EdmEntitySet edmEntitySet, UriInfo uriInfo, boolean isCount)
          throws ODataApplicationException {
       EntityCollection entityCollection = new EntityCollection();
-      List<Entity> productList = entityCollection.getEntities();
+      List<Entity> entityList = entityCollection.getEntities();
 
       FilterOption filter = uriInfo.getFilterOption();
       BreakdownOfFilterExpressionVisitor customExpression = new BreakdownOfFilterExpressionVisitor(this);
@@ -164,7 +164,7 @@ public class FieldDefinition extends ResourceInfo {
                entity.addProperty(new Property(null, "ModificationTimestamp", ValueType.PRIMITIVE,
                      entityValues.get("ModificationTimestamp")));
 
-               productList.add(entity);
+               entityList.add(entity);
             }
          }
       }
@@ -244,7 +244,12 @@ public class FieldDefinition extends ResourceInfo {
    @SuppressWarnings("unchecked")
    private int compare(Object entityValue, Object filterValue) {
       if (entityValue instanceof Comparable && filterValue instanceof Comparable) {
-         return ((Comparable<Object>) entityValue).compareTo(filterValue);
+         if (entityValue.getClass().isInstance(filterValue)) {
+            return ((Comparable<Object>) entityValue).compareTo(filterValue);
+         } else {
+            throw new IllegalArgumentException("Cannot compare values of different types: " +
+                  entityValue.getClass().getName() + " vs. " + filterValue.getClass().getName());
+         }
       }
       throw new IllegalArgumentException("Values are not comparable: " + entityValue + ", " + filterValue);
    }
